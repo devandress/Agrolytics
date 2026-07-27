@@ -19,10 +19,12 @@ FROM python:3.11-slim AS runtime
 
 # Runtime-only shared libs (no headers, no compiler). Exact package names are
 # tied to this base image's Debian release — bump alongside the base image.
+# postgresql-client provides pg_dump, used by app/services/backup.py.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgdal36 \
     libgeos-c1t64 \
     libproj25 \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 ENV GDAL_DATA=/usr/share/gdal

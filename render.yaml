@@ -11,6 +11,12 @@
 #                     La ingesta satelital se dispara manualmente vía API o local.
 #   - Disco persistente: NO (requiere plan pago). Los rasters COG viven en el
 #                     filesystem efímero (/app/data se pierde en cada deploy/restart).
+#   - Backups de BD:  NO automáticos aquí (la tarea vive en Celery beat, que no
+#                     corre en este blueprint). Supabase free tampoco los da.
+#                     Mientras tanto: `docker compose exec api python -m
+#                     app.services.backup` a mano de vez en cuando, o pasar a
+#                     render.paid.yaml (ya trae worker+beat con el backup diario
+#                     agendado) en cuanto haya clientes pagando de verdad.
 #
 # Pasos:
 #   1. Crea proyecto en https://supabase.com (gratis). Copia la connection string

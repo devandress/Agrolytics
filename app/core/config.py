@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     DATA_DIR: str = "/app/data"
     S3_BUCKET: str = "agrolytics-cog"
 
+    # ── Database backups (S3-compatible object storage — Cloudflare R2, etc.) ──
+    # Empty endpoint = backups are a no-op (logged, not silently skipped) rather
+    # than failing — same pattern as DEEPSEEK_API_KEY / MERCADOPAGO_ACCESS_TOKEN.
+    # Supabase's free tier has NO point-in-time recovery; this is the substitute.
+    BACKUP_S3_ENDPOINT_URL: str = ""
+    BACKUP_S3_BUCKET: str = ""
+    BACKUP_S3_ACCESS_KEY: str = ""
+    BACKUP_S3_SECRET_KEY: str = ""
+    BACKUP_RETENTION_DAYS: int = 14
+
     # Optional payment/API integrations
     DEEPSEEK_API_KEY: str = ""
 

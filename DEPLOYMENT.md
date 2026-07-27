@@ -235,14 +235,30 @@ The following are now enforced/available in code:
 
 ### Backup & Recovery
 
-**Database backup:**
+**Automatic backups** (`app/services/backup.py`): daily `pg_dump -Fc` to any
+S3-compatible object storage (Cloudflare R2 recommended — 10 GB free). Set
+`BACKUP_S3_ENDPOINT_URL` / `BACKUP_S3_BUCKET` / `BACKUP_S3_ACCESS_KEY` /
+`BACKUP_S3_SECRET_KEY` and it runs on Celery beat (see `render.paid.yaml`).
+Without those set, it's a logged no-op — Supabase's free tier has no
+point-in-time recovery, so this is the only backup that exists until you
+either configure it or upgrade to Supabase Pro.
+
+**Manual backup** (works even without object storage configured, or on the
+free `render.yaml` blueprint where no worker runs the scheduled task):
 ```bash
+docker-compose exec api python -m app.services.backup   # uploads if configured
+# or, straight to a local file:
 docker-compose exec db pg_dump -U postgres agrolytics > backup.sql
 ```
 
-**Restore from backup:**
+**Restore from a local `.sql` dump:**
 ```bash
 docker-compose exec -T db psql -U postgres agrolytics < backup.sql
+```
+
+**Restore from an object-storage `.dump` (custom format):**
+```bash
+pg_restore --dbname="$DATABASE_URL_SYNC" --clean --if-exists backup.dump
 ```
 
 ### Troubleshooting

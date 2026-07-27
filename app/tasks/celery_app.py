@@ -14,6 +14,7 @@ celery_app = Celery(
         "app.tasks.radar_tasks",
         "app.tasks.multisensor_tasks",
         "app.tasks.insight_tasks",
+        "app.tasks.backup_tasks",
     ],
 )
 
@@ -45,5 +46,13 @@ celery_app.conf.beat_schedule = {
     "ingest-multisensor": {
         "task": "app.tasks.multisensor_tasks.run_multisensor_ingestion",
         "schedule": crontab(minute=30, hour=1),
+    },
+    # Database backup — no-ops until BACKUP_S3_* is configured (see backup.py).
+    # Only fires if a Celery worker/beat is actually running; on Render's free
+    # plan that's not deployed today, so `python -m app.services.backup` as a
+    # Cron Job is the more reliable path until a worker is paid for.
+    "backup-database": {
+        "task": "app.tasks.backup_tasks.run_database_backup",
+        "schedule": crontab(minute=0, hour=8),  # 08:00 UTC daily
     },
 }

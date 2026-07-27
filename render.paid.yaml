@@ -74,7 +74,7 @@ services:
       - key: POSTHOG_HOST
         value: https://us.i.posthog.com
 
-  # ── Celery worker (ingestion + insights) ─────────────────────────────────────
+  # ── Celery worker (ingestion + insights + daily DB backup) ───────────────────
   - type: worker
     name: agrolytics-worker
     runtime: docker
@@ -101,6 +101,16 @@ services:
           type: keyvalue
           name: agrolytics-redis
           property: connectionString
+      # Backups (app/services/backup.py) — S3-compatible object storage, e.g.
+      # Cloudflare R2. Empty = the daily backup task no-ops (logged, not silent).
+      - key: BACKUP_S3_ENDPOINT_URL
+        sync: false
+      - key: BACKUP_S3_BUCKET
+        sync: false
+      - key: BACKUP_S3_ACCESS_KEY
+        sync: false
+      - key: BACKUP_S3_SECRET_KEY
+        sync: false
 
   # ── Celery beat (periodic schedule) ──────────────────────────────────────────
   - type: worker
