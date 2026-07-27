@@ -1012,6 +1012,7 @@ async function renderAnalisis(){
       <div class="view-sub">Panel diario · analítica, tareas y mapa en una vista</div></div>
       <div style="flex:1"></div>
     </div>
+    <div id="farm-hero"></div>
     <div class="grid g3" id="pillars" style="margin-bottom:.2rem">
       <div class="card"><div class="empty">Cargando pilares…</div></div></div>
     <div id="an-alerts"></div>
@@ -1062,7 +1063,9 @@ async function renderAnalisis(){
         <div class="tables-body" id="tables-body"><div class="empty">Cargando…</div></div>
       </div>
     </div>
-    <div class="card"><div class="card-title">${ic('drop2')} Humedad de la planta vs demanda de la atmósfera</div>
+    <details class="card" id="he-details" style="padding:0" ontoggle="if(this.open)loadHumEvap()">
+      <summary class="card-title" style="cursor:pointer;list-style:none;padding:1.05rem;margin:0;display:flex;align-items:center;gap:.4rem">${ic('drop2')} Humedad de la planta vs demanda de la atmósfera <span style="margin-left:auto;font-weight:400;font-size:.72rem;color:var(--muted)">análisis avanzado — toca para expandir</span></summary>
+      <div style="padding:0 1.05rem 1.05rem">
       <div class="grid g2">
         <div><div style="font-size:.78rem;font-weight:700;color:var(--blue);margin-bottom:.2rem">Humedad foliar (NDMI)</div>
           <div style="height:130px;position:relative"><canvas id="he-ndmi"></canvas></div></div>
@@ -1070,14 +1073,14 @@ async function renderAnalisis(){
           <div style="height:130px;position:relative"><canvas id="he-et0"></canvas></div></div>
       </div>
       <p style="font-size:.84rem;color:var(--muted);line-height:1.55;margin-top:.6rem"><b>Cómo leerlo:</b> el NDMI dice cuánta agua <b>tiene</b> la planta en sus hojas; la ET0 dice cuánta agua le <b>exige</b> la atmósfera cada día (evaporación + transpiración). Si la humedad baja mientras la demanda sube, el riego no repone lo que el clima extrae: <b>hay que regar</b>. Si la humedad se mantiene estable con demanda alta, el riego actual es suficiente.</p>
-    </div>`;
+      </div>
+    </details>`;
   document.getElementById('an-index').value=analysisIndex;
   loadPillars();
   await loadAnChart();
   await loadAnLayers();
   await loadAnTasks();
   showTable('plagas');
-  loadHumEvap();
 }
 
 let heC1=null,heC2=null;
@@ -1297,11 +1300,36 @@ async function tableClima(){
 }
 
 const PILL_STATUS={ok:'pill-ok','atención':'pill-warn','sin datos':'pill-info',crítico:'pill-crit',bajo:'pill-ok',medio:'pill-warn',alto:'pill-crit'};
+function renderFarmHero(a,p,b){
+  const el=document.getElementById('farm-hero');if(!el)return;
+  const reasons=[];
+  let level='ok';
+  if(a.status==='crítico'){level='critico';reasons.push('agua/suelo en estado crítico');}
+  else if(a.status==='atención'){if(level==='ok')level='atencion';reasons.push('agua/suelo necesita atención');}
+  if(p.level==='alto'){level='critico';reasons.push(`riesgo alto de ${p.pest}`);}
+  else if(p.level==='medio'){if(level==='ok')level='atencion';reasons.push(`riesgo medio de ${p.pest}`);}
+  const CFG={
+    critico:{color:'var(--red)',bg:'var(--red-bg)',title:'Necesita atención hoy'},
+    atencion:{color:'var(--yellow)',bg:'var(--yellow-bg)',title:'Vigilar de cerca'},
+    ok:{color:'var(--green)',bg:'var(--green-pale)',title:'Todo en orden'},
+  }[level];
+  const sub=reasons.length?reasons.join(' · '):'Sin señales de alerta en agua, suelo o plagas.';
+  el.innerHTML=`<div style="background:${CFG.bg};border:1.5px solid ${CFG.color};border-radius:12px;
+      padding:.85rem 1.1rem;margin-bottom:.7rem;display:flex;align-items:center;gap:.9rem;flex-wrap:wrap">
+    <div style="width:10px;height:10px;border-radius:50%;background:${CFG.color};flex-shrink:0"></div>
+    <div style="flex:1;min-width:200px">
+      <div style="font-weight:800;font-size:1.02rem;color:${CFG.color}">${CFG.title}</div>
+      <div style="font-size:.82rem;color:var(--text2);margin-top:.1rem">${esc(sub)}</div>
+    </div>
+    ${level!=='ok'?`<button class="add-btn" onclick="document.getElementById('an-tasks').scrollIntoView({behavior:'smooth',block:'center'})">Ver qué hacer ↓</button>`:''}
+  </div>`;
+}
 async function loadPillars(){
   const el=document.getElementById('pillars');if(!el)return;
   try{
     const d=await(await api(`/fields/${currentField.id}/pillars`)).json();
     const a=d.agua_suelo,p=d.plagas,b=d.biomasa;
+    renderFarmHero(a,p,b);
     el.innerHTML=`
       <div class="card">
         <div class="card-title">${ic('water')} Agua y Suelo</div>
