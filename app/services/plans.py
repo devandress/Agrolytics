@@ -1,29 +1,40 @@
-"""Subscription plans — limits, features and PROVISIONAL pricing.
+"""Subscription plans — priced per hectare (MXN), not a flat seat price.
 
-Pricing is a placeholder until the user runs a market test and measures unit costs.
-The real cost drivers are AI calls (DeepSeek), raster compute, storage and hosting
-(satellite data itself is free), so plans gate **fields** and **AI usage**.
+The real cost driver is near-zero and doesn't scale with hectares (AI calls,
+compute) — see the pricing memo. What scales with hectares is the customer's
+willingness to pay (more land → more water/fertilizer/yield at stake), so the
+plan is metered by total hectares under management, with a floor so a 1 ha
+account doesn't produce an invoice too small for card-processing fees to make
+sense, and a volume discount so cooperatives aren't punished for scale.
 
-Edit the numbers here; everything else (UI, limits) reads from this single source.
+Numbers are still a first hypothesis — validate with real conversations before
+treating them as final (see PRICING_NOTE).
 """
 
 from __future__ import annotations
 
-# max_fields: None = unlimited. ai: monthly AI proposal/chat allowance (None = unlimited).
+MXN_PER_HA = 19          # Productor tier, first 20 ha
+MXN_PER_HA_SCALE = 14    # Productor tier, hectare 21 and beyond
+MXN_MINIMUM = 149        # floor per paying account, regardless of hectares
+SCALE_THRESHOLD_HA = 20
+
+FREE_MAX_HA = 3          # Explorador: free, but capped in area as well as fields
+
 PLANS: dict[str, dict] = {
     "free": {
         "key": "free",
         "name": "Explorador",
-        "price_usd_month": 0,
         "price_label": "Gratis",
+        "billing": "flat",
         "max_fields": 1,
-        "ai_monthly": 0,            # sin asistente IA
+        "max_ha": FREE_MAX_HA,
+        "ai_monthly": 0,
         "indices": ["NDVI", "NDMI"],
         "radar_fusion": False,
         "export": False,
-        "tagline": "Para probar Agrolytics en una parcela.",
+        "tagline": "Para probar Agrolytics en una parcela chica.",
         "features": [
-            "1 parcela",
+            f"1 parcela · hasta {FREE_MAX_HA} ha",
             "Índices NDVI y NDMI",
             "Clima y alertas básicas",
         ],
@@ -31,34 +42,37 @@ PLANS: dict[str, dict] = {
     "pro": {
         "key": "pro",
         "name": "Productor",
-        "price_usd_month": 29,       # PROVISIONAL — ajustar tras prueba de mercado
-        "price_label": "$29/mes",
-        "max_fields": 10,
+        "price_label": f"${MXN_PER_HA} MXN/ha/mes",
+        "billing": "per_ha",
+        "max_fields": None,
+        "max_ha": None,
         "ai_monthly": 300,
         "indices": ["NDVI", "NDMI", "NDRE", "EVI", "RVI"],
         "radar_fusion": True,
         "export": True,
-        "tagline": "Para productores que gestionan varias parcelas.",
+        "tagline": f"Mínimo ${MXN_MINIMUM} MXN/mes (~{round(MXN_MINIMUM / MXN_PER_HA)} ha incluidas). Descuento automático desde la hectárea {SCALE_THRESHOLD_HA + 1}.",
         "features": [
-            "Hasta 10 parcelas",
+            "Hectáreas ilimitadas, pagás por lo que gestionás",
             "Todos los índices + radar + fusión multi-satélite",
+            "Plagas 360 (pronóstico 3 días + confirmación en campo)",
             "Asistente IA (300 consultas/mes)",
-            "Alertas y exportación de datos",
+            "Alertas WhatsApp + exportación de datos",
         ],
     },
     "enterprise": {
         "key": "enterprise",
         "name": "Cooperativa",
-        "price_usd_month": None,     # custom / contacto
         "price_label": "Contactar",
+        "billing": "custom",
         "max_fields": None,
+        "max_ha": None,
         "ai_monthly": None,
         "indices": ["NDVI", "NDMI", "NDRE", "EVI", "RVI", "VHVV"],
         "radar_fusion": True,
         "export": True,
-        "tagline": "Cooperativas y agronegocios a escala.",
+        "tagline": "Desde $9–10 MXN/ha/mes a partir de 100 ha.",
         "features": [
-            "Parcelas ilimitadas",
+            "Hectáreas ilimitadas con tarifa por volumen",
             "Multiusuario y portafolio",
             "API y white-label",
             "Soporte dedicado",
@@ -66,8 +80,7 @@ PLANS: dict[str, dict] = {
     },
 }
 
-# Pricing is provisional until validated with a market test.
-PRICING_NOTE = "Precios provisionales — sujetos a prueba de mercado."
+PRICING_NOTE = "Precio por hectárea — hipótesis inicial, sujeta a validación con productores reales."
 ORDER = ["free", "pro", "enterprise"]
 
 
@@ -82,3 +95,27 @@ def plan_allows_ai(key: str | None) -> bool:
 
 def plan_max_fields(key: str | None) -> int | None:
     return get_plan(key)["max_fields"]
+
+
+def price_mxn_for_ha(plan_key: str, total_ha: float) -> dict:
+    """Monthly MXN price for a plan given total hectares under management.
+
+    Only "pro" is metered — free is flat ($0, capped by area) and enterprise is
+    a custom quote (no self-serve number to compute).
+    """
+    if plan_key == "free":
+        return {"mxn_month": 0, "billing": "flat", "over_ha_limit": total_ha > FREE_MAX_HA}
+    if plan_key == "enterprise":
+        return {"mxn_month": None, "billing": "custom"}
+
+    base_ha = min(total_ha, SCALE_THRESHOLD_HA)
+    scale_ha = max(0.0, total_ha - SCALE_THRESHOLD_HA)
+    raw = base_ha * MXN_PER_HA + scale_ha * MXN_PER_HA_SCALE
+    mxn_month = max(MXN_MINIMUM, round(raw))
+    return {
+        "mxn_month": mxn_month,
+        "billing": "per_ha",
+        "total_ha": round(total_ha, 2),
+        "at_minimum": raw < MXN_MINIMUM,
+        "effective_mxn_per_ha": round(mxn_month / total_ha, 2) if total_ha > 0 else None,
+    }

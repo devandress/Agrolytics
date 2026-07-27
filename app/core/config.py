@@ -48,8 +48,16 @@ class Settings(BaseSettings):
     S3_BUCKET: str = "agrolytics-cog"
 
     # Optional payment/API integrations
-    PAYPAL_CLIENT_ID: str = "simulated-client-id"
     DEEPSEEK_API_KEY: str = ""
+
+    # MercadoPago (Checkout Pro). Empty = billing runs in preview-only mode (no
+    # real charge, no init_point). Get TEST-... credentials from
+    # https://www.mercadopago.com.mx/developers/panel/app for sandbox testing;
+    # switch to live APP_USR-... credentials only when ready to charge for real.
+    MERCADOPAGO_ACCESS_TOKEN: str = ""
+    MERCADOPAGO_PUBLIC_KEY: str = ""
+    # Public origin used to build MercadoPago back_urls + webhook notification_url.
+    PUBLIC_BASE_URL: str = "http://localhost:8001"
 
     # Application environment: development | staging | production
     APP_ENV: str = "development"

@@ -783,8 +783,9 @@ const ICONS={
   gear:'<circle cx="12" cy="12" r="3.2"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3h-4l-.4 2.5a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2 1.2l.4 2.5h4l.4-2.5a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.06-.4.1-.8.1-1.2z"/>',
   pins:'<path d="M12 21s-6-5.3-6-10a6 6 0 1 1 12 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/>',
   drop2:'<path d="M12 3s6 6.6 6 10.5a6 6 0 0 1-12 0C6 9.6 12 3 12 3z"/><path d="M12 17a3.5 3.5 0 0 1-3.5-3.5"/>',
+  card:'<rect x="2.5" y="5.5" width="19" height="13" rx="2"/><path d="M2.5 10h19"/><path d="M6 14.5h4"/>',
 };
-const TABS=[['analisis','Panel','leaf'],['mayordomo','Tareas','pins'],['regador','Riego','water'],['notif','Alertas','bell'],['reportes','Reportes','doc'],['whatsapp','WhatsApp','wa'],['cuenta','','gear']];
+const TABS=[['analisis','Panel','leaf'],['mayordomo','Tareas','pins'],['regador','Riego','water'],['notif','Alertas','bell'],['reportes','Reportes','doc'],['whatsapp','WhatsApp','wa'],['plan','Plan','card'],['cuenta','','gear']];
 function renderTabs(){
   const el=document.getElementById('main-tabs');if(!el)return;
   el.innerHTML=TABS.map(([v,label,icon])=>
@@ -1671,8 +1672,7 @@ async function saveNotif(){
   try{await api('/auth/me',{method:'PATCH',body:JSON.stringify({notifications:nt})});toast('Notificaciones guardadas');}catch{toast('Error');}
 }
 
-// ════ PLAN Y FACTURACIÓN (preview de pasarelas) ════
-let _planChoice=null,_gwChoice=null;
+// ════ PLAN Y FACTURACIÓN (MercadoPago) ════
 async function renderPlan(){
   const c=document.getElementById('content');c.innerHTML='<div class="empty">Cargando planes…</div>';
   try{
@@ -1680,13 +1680,18 @@ async function renderPlan(){
     const me=await(await api('/billing/me')).json();
     const u=me.usage;
     const cur=d.current_plan;
+    const pp=d.your_price_pro||{};
     c.innerHTML=`
       <div class="view-head"><div class="view-title">Plan y facturación</div>
         <div class="view-sub">${esc(d.note)}</div></div>
       <div class="card"><div class="card-title">Tu uso</div>
-        <div style="font-size:.9rem">Plan actual: <b>${esc(me.plan.name)}</b> · Parcelas: ${u.fields_used}${u.fields_limit?` / ${u.fields_limit}`:' (ilimitadas)'}</div>
-        ${u.fields_limit?`<div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,Math.round(u.fields_used/u.fields_limit*100))}%;background:var(--green)"></div></div>`:''}
+        <div style="font-size:.9rem">Plan actual: <b>${esc(me.plan.name)}</b> · ${u.hectares_used} ha${u.hectares_limit?` / ${u.hectares_limit} ha`:''} · ${u.fields_used} parcela(s)</div>
+        ${u.hectares_limit?`<div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,Math.round(u.hectares_used/u.hectares_limit*100))}%;background:var(--green)"></div></div>`:''}
+        ${me.price&&me.price.mxn_month!=null?`<div style="font-size:.82rem;color:var(--muted);margin-top:.4rem">Precio de tu plan actual: <b style="color:var(--green)">$${me.price.mxn_month} MXN/mes</b></div>`:''}
       </div>
+      ${d.your_hectares>0&&pp.mxn_month!=null?`<div style="background:var(--green-pale);border:1px solid var(--green);border-radius:10px;padding:.8rem 1rem;font-size:.86rem;margin-top:.2rem">
+        Con tus <b>${d.your_hectares} ha</b> actuales, el plan Productor te costaría <b style="color:var(--green)">$${pp.mxn_month} MXN/mes</b>${pp.at_minimum?' (mínimo de cuenta)':''}.
+      </div>`:''}
       <div class="plan-grid">
         ${d.plans.map(p=>`<div class="plan-card ${p.key===cur?'current':''} ${p.key==='pro'?'featured':''}">
           <div class="plan-name">${esc(p.name)} ${p.key===cur?'<span class="pill pill-ok">actual</span>':''} ${p.key==='pro'?'<span class="pill pill-info">popular</span>':''}</div>
@@ -1694,36 +1699,34 @@ async function renderPlan(){
           <div class="plan-tag">${esc(p.tagline)}</div>
           <ul class="plan-feats">${p.features.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>
           ${p.key===cur?'<button class="plan-btn ghost" disabled>Tu plan</button>'
-            :p.key==='enterprise'?'<button class="plan-btn ghost" onclick="toast(\'Te contactaremos para Cooperativa\')">Contactar</button>'
+            :p.key==='enterprise'?'<button class="plan-btn ghost" onclick="toast(\'Escríbenos para armar tu plan Cooperativa\')">Contactar</button>'
+            :p.key==='free'?'<button class="plan-btn ghost" onclick="downgradeToFree()">Cambiar a Explorador</button>'
             :`<button class="plan-btn" onclick="choosePlan('${p.key}')">Elegir ${esc(p.name)}</button>`}
         </div>`).join('')}
       </div>
       <div id="checkout-area"></div>`;
   }catch{c.innerHTML='<div class="empty">No se pudieron cargar los planes.</div>';}
 }
-async function choosePlan(planKey){
-  _planChoice=planKey;_gwChoice=null;
-  const d=await(await api('/billing/plans')).json();
-  const area=document.getElementById('checkout-area');
-  area.innerHTML=`<div class="card" style="margin-top:.9rem">
-    <div class="card-title">Pagar plan ${esc(d.plans.find(p=>p.key===planKey).name)} <span class="preview-tag">PREVIEW · no se cobra</span></div>
-    <div style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem">Elegí una pasarela de pago (simulación):</div>
-    <div class="gw-grid">${d.gateways.map(g=>`<div class="gw" id="gw-${g.key}" onclick="pickGateway('${g.key}')"><div class="gw-name">${esc(g.name)}</div><div class="gw-desc">${esc(g.desc)}</div></div>`).join('')}</div>
-    <button class="save-btn" id="pay-btn" onclick="confirmPay()" disabled>Confirmar pago (simulado)</button>
-    <span id="pay-msg" style="font-size:.82rem;margin-left:.6rem"></span>
-  </div>`;
-  area.scrollIntoView({behavior:'smooth'});
+async function downgradeToFree(){
+  try{await api('/billing/subscribe',{method:'POST',body:JSON.stringify({plan:'free'})});user.plan='free';toast('Cambiaste a Explorador');renderPlan();}catch{toast('Error al cambiar de plan');}
 }
-function pickGateway(g){_gwChoice=g;document.querySelectorAll('.gw').forEach(e=>e.classList.remove('sel'));document.getElementById('gw-'+g).classList.add('sel');document.getElementById('pay-btn').disabled=false;}
-async function confirmPay(){
-  const msg=document.getElementById('pay-msg');msg.style.color='var(--muted)';msg.textContent='Procesando (simulado)…';
+async function choosePlan(planKey){
+  const area=document.getElementById('checkout-area');
+  area.innerHTML='<div class="card" style="margin-top:.9rem"><div class="empty">Preparando pago…</div></div>';
+  area.scrollIntoView({behavior:'smooth'});
   try{
-    const ck=await(await api('/billing/checkout',{method:'POST',body:JSON.stringify({plan:_planChoice,gateway:_gwChoice})})).json();
-    await api('/billing/subscribe',{method:'POST',body:JSON.stringify({plan:_planChoice})});
-    user.plan=_planChoice;
-    toast('Plan activado (simulado): '+_planChoice);
-    renderPlan();
-  }catch{msg.style.color='var(--red)';msg.textContent='Error en el pago simulado.';}
+    const ck=await(await api('/billing/checkout',{method:'POST',body:JSON.stringify({plan:planKey,gateway:'mercadopago'})})).json();
+    if(ck.preview){
+      area.innerHTML=`<div class="card"><div class="card-title">Pago vía MercadoPago <span class="preview-tag">SANDBOX · sin credenciales aún</span></div>
+        <p style="font-size:.85rem;color:var(--muted)">${esc(ck.message)}</p>
+        <p style="font-size:.9rem;margin-top:.5rem">Monto que se cobraría: <b>$${ck.amount_mxn} MXN/mes</b> (${ck.hectares??'—'} ha).</p></div>`;
+      return;
+    }
+    area.innerHTML=`<div class="card"><div class="card-title">Pago vía MercadoPago ${ck.sandbox?'<span class="preview-tag">MODO PRUEBA</span>':''}</div>
+      <p style="font-size:.9rem">Monto: <b>$${ck.amount_mxn} MXN/mes</b> (${ck.hectares??'—'} ha).</p>
+      <a class="save-btn" style="display:inline-block;text-decoration:none;margin-top:.6rem" href="${ck.init_point}" target="_blank" rel="noopener">Pagar con MercadoPago →</a>
+      <p style="font-size:.74rem;color:var(--muted);margin-top:.6rem">Te lleva al checkout seguro de MercadoPago. El plan se activa solo cuando el pago se confirme — no hace falta que vuelvas a esta pantalla.</p></div>`;
+  }catch{area.innerHTML='<div class="card"><div class="empty">No se pudo iniciar el pago.</div></div>';}
 }
 
 // ── PHOTO ──
