@@ -1,0 +1,80 @@
+app = "agrolytics"          # must be globally unique — `fly launch` will rename if taken
+primary_region = "gru"      # São Paulo — closest to Argentina/LATAM
+
+[build]
+
+# Run DB migrations once per deploy on a throwaway release machine (idempotent).
+# Needs the DATABASE_URL_SYNC secret set first (see docs/DEPLOY_FLY.md).
+[deploy]
+  release_command = "alembic upgrade head"
+
+# Non-secret env vars. Secrets (DB, Redis, JWT, API keys) go via `fly secrets set`.
+[env]
+  APP_ENV   = "production"
+  LOG_LEVEL = "INFO"
+  PORT      = "8000"
+  DATA_DIR  = "/app/data"
+
+# Persistent volume for COG raster files — attached to the api machine only so a
+# single always-on machine both writes and serves them.
+# Create once:  fly volumes create agrolytics_data --size 1 --region gru
+[[mounts]]
+  source      = "agrolytics_data"
+  destination = "/app/data"
+  processes   = ["api"]
+
+# ── PROCESSES ────────────────────────────────────────────────────────────────
+# Free/always-on setup runs ONLY the always-on `api` machine. The Celery
+# `worker`/`beat` are commented out so no extra machines (and cost) are created.
+# To enable scheduled satellite ingestion later: uncomment the two lines below
+# and the matching [[vm]] block at the bottom, then `fly deploy`.
+[processes]
+  api    = "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+  # worker = "celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2"
+  # beat   = "celery -A app.tasks.celery_app beat   --loglevel=info"
+
+# ── HTTP SERVICE (api) — always-on, never sleeps (no cold starts) ────────────
+[[services]]
+  protocol             = "tcp"
+  internal_port        = 8000
+  processes            = ["api"]
+  auto_stop_machines   = false   # never scale to zero → no cold starts
+  auto_start_machines  = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port        = 80
+    handlers    = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port     = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type       = "requests"
+    hard_limit = 50
+    soft_limit = 40
+
+  [[services.http_checks]]
+    interval     = "15s"
+    timeout      = "5s"
+    grace_period = "30s"
+    method       = "GET"
+    path         = "/health"
+    protocol     = "http"
+
+# ── VM SIZE ──────────────────────────────────────────────────────────────────
+# 1gb gives rasterio/numpy/scipy/scikit-learn headroom. Drop to 512mb to save
+# ~$2.50/mo if you don't hit OOM (machine exit code 137 = out of memory).
+[[vm]]
+  size      = "shared-cpu-1x"
+  memory    = "1gb"
+  processes = ["api"]
+
+# Uncomment together with the worker/beat processes above to run background jobs
+# on a second, cheaper machine.
+# [[vm]]
+#   size      = "shared-cpu-1x"
+#   memory    = "512mb"
+#   processes = ["worker", "beat"]

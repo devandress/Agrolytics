@@ -1,0 +1,20 @@
+# Ruff configuration — linting + formatting for the FastAPI backend.
+# Run:  ruff check app tests   ·   ruff format app tests
+
+target-version = "py311"
+line-length = 110
+extend-exclude = ["migrations/versions", "data", "logs"]
+
+[lint]
+# A pragmatic, non-noisy rule set: pyflakes (F), pycodestyle (E/W), isort (I),
+# bugbear (B), comprehensions (C4), pyupgrade (UP).
+select = ["F", "E", "W", "I", "B", "C4", "UP"]
+ignore = [
+    "E501",   # line length handled by the formatter / line-length above
+    "B008",   # FastAPI uses function calls in argument defaults (Depends, Query)
+    "UP007",  # keep Optional/Union style consistent with existing code
+]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]   # re-exports
+"tests/*" = ["B"]

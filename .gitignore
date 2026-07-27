@@ -1,0 +1,36 @@
+# ── Secrets / environment ──
+.env
+.env.*
+!.env.example
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+*.egg
+
+# ── App data & runtime ──
+data/
+logs/
+*.log
+celerybeat-schedule
+celerybeat-schedule.*
+*.cog
+*.tif
+*.tiff
+
+# ── Caches ──
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+
+# ── OS / editor ──
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

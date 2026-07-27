@@ -1,0 +1,22 @@
+# Dev-only overrides — auto-loaded by `docker-compose up` (NOT used when you pass
+# an explicit -f list, e.g. the production command below).
+#
+#   Dev:  docker-compose up                       # base + this override
+#   Prod: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Mounts the working tree into the containers for live code reload during dev.
+
+services:
+  api:
+    volumes:
+      - .:/app
+      - cog_data:/app/data
+
+  celery-worker:
+    volumes:
+      - .:/app
+      - cog_data:/app/data
+
+  celery-beat:
+    volumes:
+      - .:/app

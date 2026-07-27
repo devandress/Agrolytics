@@ -1,0 +1,1945 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Agrolytics</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-side-by-side@2.2.0/leaflet-side-by-side.min.js"></script>
+<script src="/env.js"></script>
+<style>
+/* ── LIGHT THEME (legible bajo el sol) ── */
+:root{
+  --bg:#eef2ee;--card:#ffffff;--card2:#f3f6f3;
+  --green:#2e7d32;--green-accent:#43a047;--green-pale:#e3f1e4;
+  --yellow:#b8860b;--yellow-bg:#fff4d6;
+  --red:#c62828;--red-bg:#fde7e7;
+  --blue:#1565c0;--blue-bg:#e3f0fb;
+  --orange:#e65100;
+  --text:#16241a;--text2:#3a4a3d;--muted:#62736a;
+  --border:#cdd8cf;--line:#e2e8e3;
+  --radius:12px;--shadow:0 1px 3px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-thumb{background:#bcc8be;border-radius:4px}
+
+/* LOGIN */
+#login-screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#dbe9dc,#eef2ee);z-index:999}
+.login-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:2.5rem 2rem;width:min(360px,92vw);box-shadow:0 10px 40px rgba(0,0,0,.15);display:flex;flex-direction:column;gap:.9rem}
+.login-card .brand{display:flex;align-items:center;justify-content:center;gap:.5rem;font-size:1.7rem;color:var(--green);font-weight:800}
+.login-card .leaf{width:30px;height:30px}
+.login-card p{font-size:.85rem;color:var(--muted);text-align:center;margin-bottom:.5rem}
+.login-card input{background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:.8rem 1rem;color:var(--text);font-size:.95rem;outline:none}
+.login-card input:focus{border-color:var(--green)}
+.login-btn{background:var(--green);border:none;border-radius:10px;padding:.9rem;color:#fff;font-weight:700;font-size:1rem;cursor:pointer}
+.login-btn:disabled{opacity:.5}
+.login-err{color:var(--red);font-size:.82rem;text-align:center;min-height:1.1em}
+
+/* APP */
+#app{display:none;height:100vh;flex-direction:column}
+#app.on{display:flex}
+.topbar{background:var(--card);border-bottom:1px solid var(--border);padding:.55rem 1rem;display:flex;align-items:center;gap:.8rem;flex-shrink:0;box-shadow:var(--shadow);z-index:300}
+.topbar-logo{font-size:1.1rem;font-weight:800;color:var(--green);display:flex;align-items:center;gap:.4rem}
+.topbar-logo .leaf{width:22px;height:22px}
+.role-select{background:#fff;border:1.5px solid var(--green);border-radius:9px;color:var(--green);padding:.45rem .8rem;font-size:.88rem;font-weight:700;cursor:pointer;outline:none}
+.topbar-spacer{flex:1}
+.topbar-user{font-size:.78rem;color:var(--muted)}
+@media(max-width:600px){.topbar-user{display:none}}
+.topbar-btn{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:.35rem .8rem;cursor:pointer;font-size:.8rem}
+.topbar-btn:hover{border-color:var(--red);color:var(--red)}
+.menu-btn{background:none;border:1px solid var(--border);border-radius:8px;color:var(--text2);padding:.35rem .6rem;cursor:pointer;font-size:1rem;display:none}
+@media(max-width:768px){.menu-btn{display:block}}
+
+.body-wrap{display:flex;flex:1;overflow:hidden}
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150}
+.overlay.on{display:block}
+
+/* SIDEBAR */
+.sidebar{width:248px;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+.sidebar.hidden{display:none}
+@media(max-width:768px){.sidebar{position:fixed;top:49px;left:0;bottom:0;z-index:200;transform:translateX(-100%);transition:transform .25s;box-shadow:4px 0 24px rgba(0,0,0,.2)}.sidebar.open{transform:translateX(0)}}
+.sidebar-head{padding:.85rem 1rem;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.sidebar-head span{font-size:.74rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+.add-btn{background:var(--green);border:none;border-radius:7px;color:#fff;padding:.32rem .7rem;font-size:.76rem;font-weight:700;cursor:pointer}
+.fields-list{flex:1;overflow-y:auto;padding:.5rem}
+.field-item{padding:.6rem .85rem;border-radius:9px;cursor:pointer;margin-bottom:.2rem;border:1.5px solid transparent}
+.field-item:hover{background:var(--card2)}.field-item.active{background:var(--green-pale);border-color:var(--green)}
+.fi-name{font-size:.87rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fi-meta{font-size:.74rem;color:var(--muted);margin-top:.1rem}
+.fi-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:.4rem;vertical-align:middle}
+.field-item{position:relative}
+.fi-body{cursor:pointer;padding-right:1.5rem}
+.fi-del{position:absolute;top:50%;right:.5rem;transform:translateY(-50%);background:none;border:none;color:#bcc8be;
+  font-size:1rem;cursor:pointer;opacity:0;transition:all .15s;width:26px;height:26px;border-radius:7px;line-height:1}
+.field-item:hover .fi-del{opacity:1}
+.fi-del:hover{background:var(--red-bg);color:var(--red)}
+@media(max-width:768px){.fi-del{opacity:.6}}
+
+/* CONTENT */
+.content{flex:1;overflow-y:auto;padding:1.1rem;display:flex;flex-direction:column;gap:.9rem}
+@media(max-width:768px){.content{padding:.7rem}}
+.view-head{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap}
+.view-title{font-size:1.3rem;font-weight:800;color:var(--text)}
+.view-sub{font-size:.82rem;color:var(--muted)}
+.demo-tag{background:var(--yellow-bg);color:var(--yellow);font-size:.66rem;font-weight:800;padding:.12rem .45rem;border-radius:5px;border:1px solid #e8d28a;text-transform:uppercase}
+
+/* GRID + CARDS */
+.grid{display:grid;gap:.85rem}
+.g4{grid-template-columns:repeat(4,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g2{grid-template-columns:1.05fr 1fr}
+@media(max-width:900px){.g4{grid-template-columns:repeat(2,1fr)}.g3,.g2{grid-template-columns:1fr}}
+@media(max-width:560px){.g4{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1.05rem;box-shadow:var(--shadow)}
+.card-title{font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.75rem}
+.big-num{font-size:2.2rem;font-weight:800;line-height:1;color:var(--text)}
+.stat-label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+.stat-sub{font-size:.74rem;color:var(--muted);margin-top:.25rem}
+
+/* SCORE RING */
+.score-ring{width:128px;height:128px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:.3rem auto}
+.score-ring .inner{width:100px;height:100px;border-radius:50%;background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center}
+.score-ring .num{font-size:2rem;font-weight:800;line-height:1}
+.score-ring .lbl{font-size:.66rem;color:var(--muted);text-transform:uppercase;font-weight:700;margin-top:.15rem}
+
+.bar-track{background:#e0e7e1;border-radius:5px;height:10px;overflow:hidden;margin:.35rem 0}
+.bar-fill{height:100%;border-radius:5px;transition:width .6s}
+
+/* TASKS */
+.task{display:flex;align-items:center;gap:.7rem;background:var(--card);border:1px solid var(--border);border-left-width:5px;border-radius:10px;padding:.75rem .9rem;margin-bottom:.55rem;box-shadow:var(--shadow)}
+.task.sel{outline:2px solid var(--green)}
+.cat{font-size:.64rem;font-weight:800;letter-spacing:.05em;padding:.2rem .5rem;border-radius:6px;text-transform:uppercase;flex-shrink:0;min-width:88px;text-align:center}
+.cat-riego{background:var(--blue-bg);color:var(--blue)}.cat-fertilizacion{background:#e8f5e9;color:var(--green)}.cat-inspeccion{background:var(--yellow-bg);color:var(--yellow)}.cat-otro{background:var(--card2);color:var(--muted)}
+.task-body{flex:1;min-width:0}
+.task-title{font-size:.92rem;font-weight:700}
+.task-detail{font-size:.78rem;color:var(--muted);margin-top:.12rem}
+.task-qty{font-size:.82rem;font-weight:800;color:var(--blue);white-space:nowrap}
+.task-btns{display:flex;gap:.35rem;flex-shrink:0}
+.tbtn{border:none;border-radius:8px;padding:.5rem .65rem;font-size:.82rem;font-weight:700;cursor:pointer}
+.tbtn-done{background:var(--green);color:#fff}.tbtn-photo{background:var(--card2);color:var(--text2);border:1px solid var(--border)}
+.prio-1{border-left-color:var(--red)}.prio-2{border-left-color:var(--orange)}.prio-3{border-left-color:var(--yellow)}.prio-4{border-left-color:var(--muted)}
+
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;font-size:.85rem}
+.tbl th{text-align:left;color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;padding:.55rem .6rem;border-bottom:2px solid var(--line);font-weight:800}
+.tbl td{padding:.6rem .6rem;border-bottom:1px solid var(--line)}
+.tbl tr:hover td{background:var(--card2)}
+.pill{font-size:.72rem;font-weight:800;padding:.18rem .6rem;border-radius:20px;white-space:nowrap}
+.pill-ok{background:var(--green-pale);color:var(--green)}.pill-warn{background:var(--yellow-bg);color:var(--yellow)}.pill-crit{background:var(--red-bg);color:var(--red)}
+
+/* Análisis 2 columnas: rásters siempre a la izquierda, análisis+actividades a la derecha */
+.an-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:.9rem;align-items:start}
+@media(max-width:980px){.an-grid{grid-template-columns:1fr}}
+.an-left{position:sticky;top:0}
+@media(max-width:980px){.an-left{position:static}}
+.an-right{display:flex;flex-direction:column;gap:.9rem}
+.an-left #map{height:460px}
+@media(max-width:980px){.an-left #map{height:300px}}
+
+/* MAP */
+.map-card{padding:0;overflow:hidden;display:flex;flex-direction:column;border-radius:16px;box-shadow:0 8px 26px rgba(0,0,0,.12)}
+.map-card .card-title{padding:.85rem 1rem .1rem}
+#map{height:420px;width:100%;background:#0e1c16}
+.leaflet-container{background:#0e1c16;font:inherit}
+.leaflet-popup-content-wrapper{border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.22)}
+.map-legend{display:flex;gap:.45rem;padding:.6rem 1rem;font-size:.73rem;color:var(--muted);border-top:1px solid var(--line);flex-wrap:wrap;align-items:center}
+.map-legend>span{background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:.18rem .6rem}
+.legend-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:.35rem;vertical-align:middle;box-shadow:0 0 0 2px #fff}
+.pin-marker{position:relative;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 3px 9px rgba(0,0,0,.5);width:24px;height:24px}
+.pin-marker::after{content:'';position:absolute;top:50%;left:50%;width:7px;height:7px;background:#fff;border-radius:50%;transform:translate(-50%,-50%)}
+/* WhatsApp alert button */
+.wa-btn{background:#25D366;color:#fff;border:none;border-radius:10px;padding:.5rem .85rem;font-weight:700;font-size:.82rem;cursor:pointer;display:inline-flex;align-items:center;gap:.4rem;box-shadow:0 2px 8px rgba(37,211,102,.4)}
+.wa-btn:hover{background:#1da851}
+.wa-bar{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;background:#e8f8ee;border:1px solid #bfe9cf;border-radius:12px;padding:.7rem .9rem;margin-top:.9rem}
+.wa-bar input{border:1px solid var(--line);border-radius:8px;padding:.4rem .55rem;font-size:.82rem;width:150px}
+/* Map card polish */
+.map-card .card-title{padding:.9rem 1rem .6rem;font-size:.94rem}
+.map-ctl{font-size:.72rem;color:var(--muted);font-weight:600;display:inline-flex;align-items:center;gap:.35rem}
+.map-ctl select{border:1px solid var(--line);border-radius:8px;padding:.32rem .55rem;font-size:.8rem;color:var(--text);background:#fff;font-weight:600;cursor:pointer;outline:none}
+.map-ctl select:hover{border-color:var(--green)}
+.raster-layer{image-rendering:pixelated;image-rendering:crisp-edges}
+.map-legend{background:linear-gradient(#ffffff,#f7faf8)}
+.map-legend>span{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+/* Top nav tabs (replace role toggle) */
+.tabs{display:flex;gap:.15rem;align-items:center;overflow-x:auto;scrollbar-width:none}
+.tab{border:none;background:transparent;padding:.5rem .8rem;font-size:.86rem;font-weight:700;color:var(--muted);cursor:pointer;border-radius:9px;display:inline-flex;align-items:center;gap:.35rem;white-space:nowrap}
+.tab:hover{background:var(--card2);color:var(--text)}
+.tab.active{background:var(--green);color:#fff}
+.tab.active .ic{color:#fff}
+.tab .ic{color:var(--green)}
+/* WhatsApp contacts */
+.wa-contact{display:flex;align-items:center;gap:.7rem;padding:.6rem .8rem;border:1px solid var(--line);border-radius:10px;margin-bottom:.45rem;background:#fff}
+.wa-contact b{flex:1}
+/* Print: only the report area */
+@media print{body *{visibility:hidden}#report-area,#report-area *{visibility:visible}#report-area{position:absolute;left:0;top:0;width:100%}}
+/* Place search (create wizard) */
+.wz-search-box{display:flex;gap:.45rem;margin-bottom:.5rem}
+.wz-search-box input{flex:1;border:1px solid var(--border);border-radius:9px;padding:.5rem .7rem;font-size:.88rem;outline:none}
+.wz-search-box input:focus{border-color:var(--green)}
+.wz-search-res{margin-bottom:.5rem;max-height:150px;overflow:auto}
+.wz-res{padding:.45rem .6rem;font-size:.82rem;border:1px solid var(--line);border-top:none;cursor:pointer;background:#fff}
+.wz-res:first-child{border-top:1px solid var(--line);border-radius:8px 8px 0 0}
+.wz-res:last-child{border-radius:0 0 8px 8px}
+.wz-res:hover{background:var(--card2)}
+.wz-res.muted{color:var(--muted);cursor:default}
+/* Attention (anomaly) pin — pulsing red */
+.anom-pin{width:15px;height:15px;border-radius:50%;background:#ff1744;border:2.5px solid #fff;box-shadow:0 0 0 0 rgba(255,23,68,.55);animation:anomPulse 1.6s infinite}
+@keyframes anomPulse{0%{box-shadow:0 0 0 0 rgba(255,23,68,.55)}70%{box-shadow:0 0 0 13px rgba(255,23,68,0)}100%{box-shadow:0 0 0 0 rgba(255,23,68,0)}}
+/* Raster pixel hover tooltip */
+.map-wrap{position:relative}
+.px-tip{position:absolute;pointer-events:none;background:#16241a;color:#fff;font-size:.72rem;font-weight:600;padding:.22rem .5rem;border-radius:6px;display:none;z-index:600;transform:translate(-50%,-150%);white-space:nowrap;box-shadow:0 3px 10px rgba(0,0,0,.35)}
+/* Agriculture line icons */
+.ic{width:1.05em;height:1.05em;vertical-align:-.16em;display:inline-block}
+.card-title .ic,.tbl-tab .ic{color:var(--green);margin-right:.1rem}
+/* Quick guide bar */
+.quick-guide{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;background:linear-gradient(90deg,#eefaf1,#e9f4ff);border:1px solid #cfeadd;border-radius:14px;padding:.6rem .95rem;margin-bottom:.75rem;font-size:.83rem;color:#28513d}
+.quick-guide b{color:#1b5e3f}
+.quick-guide .steps{display:flex;gap:1rem;flex-wrap:wrap}
+.quick-guide .qx{margin-left:auto;border:none;background:transparent;cursor:pointer;color:#6a8a7a;font-size:1rem;line-height:1}
+.leaflet-popup-content{font-size:.84rem;margin:.7rem .9rem}
+.popup-task{padding:.3rem 0;border-bottom:1px solid #eee}
+.popup-task:last-child{border:none}
+.popup-go{display:inline-block;background:var(--blue);color:#fff;text-decoration:none;border-radius:7px;padding:.4rem .7rem;font-weight:700;font-size:.8rem;margin-top:.5rem}
+
+/* WORKER */
+.worker-wrap{max-width:600px;margin:0 auto;width:100%}
+.worker-task{background:var(--card);border:1px solid var(--border);border-left:7px solid var(--red);border-radius:14px;padding:1.2rem;margin-bottom:.9rem;box-shadow:var(--shadow)}
+.wt-top{display:flex;align-items:center;gap:.8rem}
+.wt-cat{font-size:.7rem;font-weight:800;letter-spacing:.05em;padding:.25rem .6rem;border-radius:7px;text-transform:uppercase}
+.wt-title{font-size:1.3rem;font-weight:800;margin-top:.5rem}
+.wt-sub{font-size:1rem;color:var(--text2);margin-top:.25rem}
+.wt-actions{display:flex;gap:.6rem;margin-top:.9rem}
+.worker-done{flex:1;background:var(--green);color:#fff;border:none;border-radius:12px;padding:.95rem;font-size:1.05rem;font-weight:800;cursor:pointer}
+.worker-go{background:var(--blue);color:#fff;border:none;border-radius:12px;padding:.95rem 1.1rem;font-size:1rem;font-weight:800;cursor:pointer;text-decoration:none;display:flex;align-items:center}
+
+/* WEATHER mini */
+.wx{display:flex;align-items:center;gap:.7rem}
+.wx-temp{font-size:1.8rem;font-weight:800;color:var(--blue)}
+.wx-pills{display:grid;grid-template-columns:1fr 1fr;gap:.45rem;margin-top:.65rem}
+.wx-pill{background:var(--card2);border-radius:8px;padding:.4rem .65rem}
+.wx-l{font-size:.64rem;color:var(--muted);text-transform:uppercase;font-weight:700}.wx-v{font-size:.86rem;font-weight:700}
+
+/* MODAL */
+.modal-wrap{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center;padding:1rem}
+.modal-wrap.on{display:flex}
+.modal{background:var(--card);border-radius:16px;padding:1.5rem;width:min(420px,96vw);max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal h3{color:var(--green);margin-bottom:1rem;font-size:1.05rem}
+.modal label{font-size:.78rem;color:var(--muted);display:block;margin:.65rem 0 .2rem;font-weight:700}
+.modal input,.modal select,.modal textarea{width:100%;background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:.6rem .85rem;color:var(--text);font-size:.88rem;outline:none}
+.modal input:focus,.modal select:focus,.modal textarea:focus{border-color:var(--green)}
+.modal textarea{resize:vertical;height:70px;font-family:monospace;font-size:.75rem}
+.modal-btns{display:flex;gap:.65rem;margin-top:1.1rem}
+.modal-btns .btn{flex:1;padding:.7rem;border-radius:9px;border:none;font-weight:700;cursor:pointer}
+.btn-primary{background:var(--green);color:#fff}.btn-cancel{background:var(--card2);color:var(--text);border:1px solid var(--border)}
+.modal-err{color:var(--red);font-size:.8rem;text-align:center;margin-top:.5rem;min-height:1.1em}
+.radio-row{display:flex;gap:.5rem;margin-top:.3rem}
+.radio-row label{flex:1;background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:.55rem;text-align:center;cursor:pointer;font-size:.82rem;margin:0;font-weight:700;color:var(--text)}
+.radio-row input{display:none}
+.radio-row label:has(input:checked){border-color:var(--green);background:var(--green-pale);color:var(--green)}
+
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:rot .6s linear infinite;vertical-align:middle;margin-right:.35rem}
+@keyframes rot{to{transform:rotate(360deg)}}
+.empty{color:var(--muted);font-size:.88rem;text-align:center;padding:2rem 1rem;line-height:1.6}
+#toast{position:fixed;bottom:1.3rem;left:50%;transform:translateX(-50%) translateY(90px);background:var(--text);color:#fff;border-radius:10px;padding:.7rem 1.3rem;font-size:.85rem;box-shadow:0 6px 24px rgba(0,0,0,.3);z-index:9999;transition:transform .3s;font-weight:600}
+#toast.show{transform:translateX(-50%) translateY(0)}
+@media print{.topbar,.sidebar,.no-print{display:none!important}.content{overflow:visible}.card{break-inside:avoid}}
+
+/* Cuenta: form rows + toggles */
+.form-row{margin-bottom:.7rem}
+.form-row label{display:block;font-size:.76rem;color:var(--muted);font-weight:700;margin-bottom:.25rem}
+.form-row input,.form-row select{width:100%;background:#fff;border:1.5px solid var(--border);border-radius:9px;padding:.6rem .85rem;font-size:.9rem;outline:none;color:var(--text)}
+.form-row input:focus,.form-row select:focus{border-color:var(--green)}
+.form-row input:read-only{background:var(--card2);color:var(--muted)}
+.save-btn{background:var(--green);border:none;border-radius:9px;color:#fff;font-weight:700;padding:.6rem 1.1rem;cursor:pointer;font-size:.88rem}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--line)}
+.toggle-row:last-child{border:none}
+.switch{position:relative;width:44px;height:24px;flex-shrink:0}
+.switch input{display:none}
+.switch .slider{position:absolute;inset:0;background:#cdd8cf;border-radius:24px;transition:.2s;cursor:pointer}
+.switch .slider:before{content:"";position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+.switch input:checked+.slider{background:var(--green)}
+.switch input:checked+.slider:before{transform:translateX(20px)}
+
+/* Billing: plan cards + gateways */
+.plan-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.9rem}
+@media(max-width:860px){.plan-grid{grid-template-columns:1fr}}
+.plan-card{background:var(--card);border:2px solid var(--border);border-radius:14px;padding:1.2rem;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+.plan-card.current{border-color:var(--green)}
+.plan-card.featured{border-color:var(--green-accent);box-shadow:0 6px 24px rgba(46,125,50,.15)}
+.plan-name{font-size:1.1rem;font-weight:800}
+.plan-price{font-size:1.7rem;font-weight:800;color:var(--green);margin:.3rem 0}
+.plan-tag{font-size:.78rem;color:var(--muted);margin-bottom:.7rem;min-height:2.4em}
+.plan-feats{list-style:none;padding:0;margin:0 0 1rem;flex:1}
+.plan-feats li{font-size:.83rem;padding:.25rem 0;color:var(--text2)}
+.plan-feats li:before{content:"✓ ";color:var(--green);font-weight:800}
+.plan-btn{background:var(--green);border:none;border-radius:9px;color:#fff;font-weight:700;padding:.6rem;cursor:pointer;font-size:.88rem}
+.plan-btn.ghost{background:var(--card2);color:var(--text);border:1px solid var(--border)}
+.plan-btn:disabled{opacity:.6;cursor:default}
+.gw-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin:.6rem 0}
+@media(max-width:560px){.gw-grid{grid-template-columns:1fr}}
+.gw{border:2px solid var(--border);border-radius:11px;padding:.8rem;text-align:center;cursor:pointer;transition:all .15s;background:#fff}
+.gw:hover{border-color:var(--green-accent)}
+.gw.sel{border-color:var(--green);background:var(--green-pale)}
+.gw .gw-name{font-weight:800;font-size:.95rem}
+.gw .gw-desc{font-size:.72rem;color:var(--muted);margin-top:.15rem}
+.preview-tag{background:var(--yellow-bg);color:var(--yellow);border:1px solid #e8d28a;border-radius:7px;padding:.4rem .7rem;font-size:.78rem;font-weight:700;display:inline-block}
+
+/* Seguimiento: sidebar de tablas */
+.tables-wrap{display:grid;grid-template-columns:170px 1fr;gap:.9rem}
+@media(max-width:760px){.tables-wrap{grid-template-columns:1fr}}
+.tables-side{display:flex;flex-direction:column;gap:.35rem}
+@media(max-width:760px){.tables-side{flex-direction:row;flex-wrap:wrap}}
+.tbl-tab{text-align:left;background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:.55rem .8rem;font-size:.84rem;font-weight:600;color:var(--text);cursor:pointer;transition:all .15s}
+.tbl-tab:hover{border-color:var(--green-accent)}
+.tbl-tab.active{background:var(--green-pale);border-color:var(--green);color:var(--green)}
+.tables-body{min-height:160px;overflow-x:auto}
+/* Pest interpretation table */
+.pest-row{border:1px solid var(--border);border-left-width:5px;border-radius:10px;padding:.7rem .9rem;margin-bottom:.55rem}
+.pest-row.alto{border-left-color:var(--red)}.pest-row.medio{border-left-color:var(--orange)}.pest-row.bajo{border-left-color:var(--green)}
+.pest-head{display:flex;align-items:center;justify-content:space-between;gap:.6rem}
+.pest-name{font-weight:700;font-size:.92rem}
+.pest-kind{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.pest-drivers{font-size:.78rem;color:var(--text2);margin-top:.3rem}
+.pest-scout{font-size:.76rem;color:var(--muted);margin-top:.25rem;font-style:italic}
+.pest-manage label{display:flex;align-items:center;gap:.45rem;font-size:.84rem;padding:.3rem 0;border-bottom:1px solid var(--line)}
+
+/* Línea de tiempo movible (scrubber) */
+.timeline{margin:.4rem 0 .2rem}
+.timeline-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem}
+.timeline-date{font-weight:800;font-size:1rem;color:var(--green)}
+.timeline-sub{font-size:.74rem;color:var(--muted)}
+.timeline input[type=range]{width:100%;accent-color:var(--green);height:6px;cursor:pointer}
+.timeline-ends{display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);margin-top:.15rem}
+.tl-nav{background:var(--card2);border:1px solid var(--border);border-radius:7px;width:30px;height:30px;cursor:pointer;font-size:1rem;color:var(--text)}
+.tl-nav:hover{border-color:var(--green)}
+
+/* ── Animaciones suaves (sin spinners/pop-ups) ── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.content>*{animation:fadeUp .35s ease both}
+@keyframes slideIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:none}}
+@keyframes slideOut{from{opacity:1;transform:none}to{opacity:0;transform:translateX(-40px)}}
+
+/* ── Wizard de onboarding (pantalla con slides, no pop-up) ── */
+#wizard{position:fixed;inset:0;z-index:600;background:linear-gradient(135deg,#eaf3ea,#f6faf6);
+  display:none;flex-direction:column}
+#wizard.on{display:flex}
+.wz-top{display:flex;align-items:center;gap:.8rem;padding:1rem 1.3rem;border-bottom:1px solid var(--border)}
+.wz-top .brand{font-weight:800;color:var(--green);display:flex;align-items:center;gap:.4rem}
+.wz-skip{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:.85rem;font-weight:600}
+.wz-dots{display:flex;gap:.4rem;justify-content:center;padding:.8rem}
+.wz-dot{width:9px;height:9px;border-radius:50%;background:#cdd8cf;transition:all .3s}
+.wz-dot.on{background:var(--green);transform:scale(1.25)}
+.wz-stage{flex:1;display:flex;align-items:center;justify-content:center;padding:1rem;overflow:hidden}
+.wz-slide{width:min(560px,94vw);animation:slideIn .4s ease both}
+.wz-slide.out{animation:slideOut .3s ease both}
+.wz-kicker{font-size:.8rem;color:var(--green);font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.wz-title{font-size:1.6rem;font-weight:800;margin:.3rem 0 .4rem}
+.wz-help{font-size:.9rem;color:var(--muted);margin-bottom:1.2rem;line-height:1.5}
+.wz-slide label{display:block;font-size:.8rem;color:var(--muted);font-weight:700;margin:.7rem 0 .25rem}
+.wz-slide input,.wz-slide select,.wz-slide textarea{width:100%;background:#fff;border:1.5px solid var(--border);
+  border-radius:11px;padding:.8rem 1rem;font-size:1rem;color:var(--text);outline:none;transition:border .2s}
+.wz-slide input:focus,.wz-slide select:focus,.wz-slide textarea:focus{border-color:var(--green)}
+.wz-slide textarea{height:90px;resize:vertical;font-family:inherit}
+.wz-chips{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.55rem}
+.wz-chip{background:#fff;border:1.5px solid var(--border);border-radius:20px;padding:.4rem .9rem;font-size:.84rem;
+  cursor:pointer;transition:all .15s;color:var(--text2)}
+.wz-chip:hover{border-color:var(--green);background:var(--green-pale);color:var(--green)}
+.wz-nav{display:flex;gap:.7rem;padding:1.1rem 1.3rem;border-top:1px solid var(--border)}
+.wz-back{background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:.8rem 1.3rem;font-weight:700;cursor:pointer;color:var(--text)}
+.wz-next{flex:1;background:var(--green);border:none;border-radius:11px;padding:.8rem;color:#fff;font-weight:800;font-size:1rem;cursor:pointer}
+.wz-next:disabled{opacity:.5;cursor:not-allowed}
+
+/* Tarjetas de cultivo en el wizard */
+.crop-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin-top:.3rem}
+@media(max-width:520px){.crop-grid{grid-template-columns:repeat(3,1fr)}}
+.crop-card{background:#fff;border:2px solid var(--border);border-radius:12px;padding:.7rem .4rem;text-align:center;cursor:pointer;transition:all .15s}
+.crop-card:hover{border-color:var(--green-accent)}
+.crop-card.sel{border-color:var(--green);background:var(--green-pale)}
+.crop-card .emoji{font-size:1.5rem;line-height:1}
+.crop-card .nm{font-size:.78rem;font-weight:700;margin-top:.25rem;color:var(--text)}
+
+/* Asistente IA (chat izquierda / tareas derecha) */
+.assistant-grid{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-top:.3rem}
+@media(max-width:860px){.assistant-grid{grid-template-columns:1fr}}
+.chat-col{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--card2)}
+.chat-msgs{flex:1;min-height:200px;max-height:300px;overflow-y:auto;padding:.7rem;display:flex;flex-direction:column;gap:.5rem}
+.bubble{max-width:85%;padding:.5rem .75rem;border-radius:12px;font-size:.85rem;line-height:1.4}
+.bubble.user{align-self:flex-end;background:var(--green);color:#fff;border-bottom-right-radius:3px}
+.bubble.bot{align-self:flex-start;background:#fff;border:1px solid var(--line);border-bottom-left-radius:3px}
+.bubble.typing{color:var(--muted);font-style:italic}
+.chat-input-row{display:flex;gap:.4rem;padding:.5rem;border-top:1px solid var(--line);background:#fff}
+.chat-input-row input{flex:1;border:1.5px solid var(--border);border-radius:9px;padding:.55rem .8rem;font-size:.88rem;outline:none}
+.chat-input-row input:focus{border-color:var(--green)}
+.chat-send{background:var(--green);border:none;border-radius:9px;color:#fff;padding:0 .9rem;font-size:1rem;cursor:pointer}
+.tasks-col .subtitle{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:.3rem 0 .4rem}
+.proposed{background:#fff;border:1px dashed var(--green);border-radius:10px;padding:.6rem .7rem;margin-bottom:.5rem}
+.proposed .pt-title{font-size:.86rem;font-weight:700}
+.proposed .pt-detail{font-size:.76rem;color:var(--muted);margin:.15rem 0 .4rem}
+.pt-add{background:var(--green);border:none;border-radius:8px;color:#fff;font-size:.78rem;font-weight:700;padding:.35rem .7rem;cursor:pointer}
+.pt-dismiss{background:none;border:none;color:var(--muted);font-size:.78rem;cursor:pointer;margin-left:.4rem}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="brand"><svg class="leaf" viewBox="0 0 24 24" fill="#2e7d32"><path d="M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66.95-2.3c.48.17.98.3 1.34.3C19 20 22 3 22 3c-1 2-8 2.25-13 3.25S2 11.5 2 13.5s1.75 3.75 1.75 3.75C7 8 17 8 17 8z"/></svg>Agrolytics</div>
+    <p>Inteligencia agrícola satelital</p>
+    <input type="email" id="l-email" value="123@gmail.com"/>
+    <input type="password" id="l-pass" value="12345678"/>
+    <button class="login-btn" id="login-btn" onclick="doLogin()">Iniciar sesión</button>
+    <div class="login-err" id="login-err"></div>
+    <div style="text-align:center;font-size:.72rem;color:var(--muted);margin-top:.3rem">
+      <a href="/privacy" target="_blank" style="color:var(--muted)">Privacidad</a> ·
+      <a href="/terms" target="_blank" style="color:var(--muted)">Términos</a>
+    </div>
+  </div>
+</div>
+
+<!-- Banner de cookies (opt-in, privacy-friendly) -->
+<div id="cookie-banner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:1200;
+  background:#fff;border-top:1px solid var(--border);box-shadow:0 -2px 16px rgba(0,0,0,.12);
+  padding:.9rem 1.2rem;display:none;align-items:center;gap:1rem;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px;font-size:.85rem;color:var(--text)">
+    Usamos cookies de analítica (opcionales) para mejorar Agrolytics. Tu sesión funciona igual si las rechazas.
+    <a href="/privacy" target="_blank" style="color:var(--green);font-weight:600">Más info</a>
+  </div>
+  <div style="display:flex;gap:.5rem">
+    <button onclick="rejectCookies()" style="background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:.5rem 1rem;font-size:.85rem;cursor:pointer;color:var(--text)">Rechazar</button>
+    <button onclick="acceptCookies()" style="background:var(--green);border:none;border-radius:8px;padding:.5rem 1.1rem;font-size:.85rem;font-weight:700;cursor:pointer;color:#fff">Aceptar</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="topbar">
+    <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+    <div class="topbar-logo"><svg class="leaf" viewBox="0 0 24 24" fill="#2e7d32"><path d="M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66.95-2.3c.48.17.98.3 1.34.3C19 20 22 3 22 3c-1 2-8 2.25-13 3.25S2 11.5 2 13.5s1.75 3.75 1.75 3.75C7 8 17 8 17 8z"/></svg>Agrolytics</div>
+    <nav class="tabs" id="main-tabs"></nav>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-user" id="top-email"></div>
+    <button class="topbar-btn" onclick="doLogout()">Salir</button>
+  </div>
+
+  <div class="body-wrap">
+    <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-head"><span id="fields-count">Campos</span>
+        <button class="add-btn" onclick="wzStart('create')">+ Nuevo</button></div>
+      <div class="fields-list" id="fields-list"><div class="empty">Cargando…</div></div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+
+<!-- WIZARD onboarding (pantalla con slides) -->
+<div id="wizard">
+  <div class="wz-top"><span class="brand"><svg class="leaf" style="width:20px;height:20px" viewBox="0 0 24 24" fill="#2e7d32"><path d="M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66.95-2.3c.48.17.98.3 1.34.3C19 20 22 3 22 3c-1 2-8 2.25-13 3.25S2 11.5 2 13.5s1.75 3.75 1.75 3.75C7 8 17 8 17 8z"/></svg><span id="wz-mode-label">Nueva parcela</span></span>
+    <button class="wz-skip" onclick="wzCancel()">Cancelar ✕</button></div>
+  <div class="wz-dots" id="wz-dots"></div>
+  <div class="wz-stage"><div id="wz-slide" class="wz-slide"></div></div>
+  <div class="wz-nav">
+    <button class="wz-back" id="wz-back" onclick="wzPrev()">Atrás</button>
+    <button class="wz-next" id="wz-next" onclick="wzNext()">Continuar</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- MODAL nuevo campo -->
+<div class="modal-wrap" id="modal-field" onclick="if(event.target===this)closeModal('field')">
+  <div class="modal">
+    <h3>Nuevo campo</h3>
+    <label>Nombre *</label><input id="nf-name" placeholder="Parcela Norte"/>
+    <label>Cultivo</label>
+    <select id="nf-crop"><option value="">— Sin especificar —</option>
+      <option>Lechuga</option><option>Espinaca</option><option>Brócoli</option><option>Coliflor</option>
+      <option>Fresa</option><option>Apio</option><option>Alcachofa</option><option>Vid</option><option>corn</option><option>wheat</option></select>
+    <label>Área (ha)</label><input id="nf-area" type="number" value="5" step="0.1" min="0.01"/>
+    <label>Coordenadas GeoJSON</label>
+    <textarea id="nf-geo" placeholder='[[ [-64.18,-31.42],[-64.17,-31.42],[-64.17,-31.43],[-64.18,-31.43],[-64.18,-31.42] ]]'></textarea>
+    <div class="modal-btns"><button class="btn btn-cancel" onclick="closeModal('field')">Cancelar</button>
+      <button class="btn btn-primary" id="nf-submit" onclick="createField()">Crear</button></div>
+    <div class="modal-err" id="nf-err"></div>
+  </div>
+</div>
+
+<!-- MODAL foto -->
+<div class="modal-wrap" id="modal-photo" onclick="if(event.target===this)closeModal('photo')">
+  <div class="modal">
+    <h3>Foto de validación</h3>
+    <p style="font-size:.8rem;color:var(--muted)" id="photo-ctx"></p>
+    <label>Foto del campo</label><input id="ph-file" type="file" accept="image/*" capture="environment"/>
+    <label>¿La alerta es correcta?</label>
+    <div class="radio-row">
+      <label><input type="radio" name="ph-confirm" value="true" checked><span>Sí, confirmo</span></label>
+      <label><input type="radio" name="ph-confirm" value="false"><span>No, es falsa</span></label>
+    </div>
+    <label>Comentario (opcional)</label><input id="ph-caption" placeholder="Lo que observas en campo…"/>
+    <div class="modal-btns"><button class="btn btn-cancel" onclick="closeModal('photo')">Cancelar</button>
+      <button class="btn btn-primary" id="ph-submit" onclick="submitPhoto()">Enviar</button></div>
+    <div class="modal-err" id="ph-err"></div>
+  </div>
+</div>
+
+<!-- MODAL: crear tarea en el mapa -->
+<div class="modal-wrap" id="modal-maptask" onclick="if(event.target===this)closeModal('maptask')">
+  <div class="modal">
+    <h3>Nueva tarea en el mapa</h3>
+    <p style="font-size:.78rem;color:var(--muted)">Punto: <b id="mt-coords"></b></p>
+    <label>Tipo</label>
+    <select id="mt-type"><option value="riego">Riego</option><option value="fertilizacion">Fertilización</option>
+      <option value="inspeccion" selected>Inspección</option><option value="otro">Otra</option></select>
+    <label>Título *</label><input id="mt-title" placeholder="Ej. Revisar mancha de estrés"/>
+    <label>Cantidad / detalle (opcional)</label><input id="mt-qty" placeholder="Ej. 25 mm"/>
+    <label>Prioridad</label>
+    <select id="mt-prio"><option value="1">1 · Urgente</option><option value="2">2 · Importante</option>
+      <option value="3" selected>3 · Programada</option><option value="4">4 · Baja</option></select>
+    <div class="modal-btns"><button class="btn btn-cancel" onclick="closeModal('maptask')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveMapTask()">Crear tarea</button></div>
+    <div class="modal-err" id="mt-err"></div>
+  </div>
+</div>
+
+<script>
+const API='/api/v1';
+let token=localStorage.getItem('agv')||'';
+let user=null,currentRole='analisis',currentField=null,allFields=[],photoTaskCtx=null;
+let leafMap=null,markers={};
+
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function toast(m,ms=2800){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),ms);}
+const api=(p,o={})=>{
+  const c=new AbortController();const t=setTimeout(()=>c.abort(),o.timeout||25000);
+  return fetch(API+p,{...o,signal:c.signal,headers:{Authorization:`Bearer ${token}`,...(o.body instanceof FormData?{}:{'Content-Type':'application/json'}),...(o.headers||{})}})
+    .catch(err=>{throw (err&&err.name==='AbortError')?new Error('Tiempo de espera agotado. Reintenta.'):err;})
+    .finally(()=>clearTimeout(t));
+};
+
+const WMO={0:'Despejado',1:'Mayormente despejado',2:'Parcialmente nublado',3:'Nublado',45:'Niebla',51:'Llovizna',61:'Lluvia',63:'Lluvia moderada',65:'Lluvia intensa',80:'Chubascos',95:'Tormenta'};
+const wxDesc=c=>WMO[+c]||WMO[Math.floor(+c/10)*10]||'Variable';
+const statusPill=s=>({sano:'pill-ok','atención':'pill-warn',ok:'pill-ok',warning:'pill-warn',bajo:'pill-ok',medio:'pill-warn',alto:'pill-crit'})[s]||'pill-crit';
+const prioColor=p=>p===1?'#c62828':p===2?'#e65100':p===3?'#b8860b':'#62736a';
+const CAT={riego:'Riego',fertilizacion:'Fertilizar',inspeccion:'Revisar',otro:'Tarea'};
+
+// centroid [lat,lon] from GeoJSON polygon
+function centroid(geom){
+  try{const ring=geom.coordinates[0];let x=0,y=0,n=0;
+    for(const[lon,lat]of ring){x+=lon;y+=lat;n++;}
+    return [y/n,x/n];
+  }catch{return null;}
+}
+
+// ── AUTH ──
+async function doLogin(){
+  const b=document.getElementById('login-btn'),e=document.getElementById('login-err');
+  e.textContent='';b.disabled=true;b.innerHTML='<span class="spin"></span>Ingresando…';
+  try{
+    const r=await fetch(`${API}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('l-email').value.trim(),password:document.getElementById('l-pass').value})});
+    const d=await r.json();
+    if(!r.ok){e.textContent=d.detail||'Credenciales incorrectas';return;}
+    token=d.access_token;localStorage.setItem('agv',token);await initApp();
+  }catch{e.textContent='No se pudo conectar.';}finally{b.disabled=false;b.textContent='Iniciar sesión';}
+}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!document.getElementById('app').classList.contains('on'))doLogin();});
+async function doLogout(){try{await api('/auth/logout',{method:'POST'});}catch{}token='';localStorage.removeItem('agv');location.reload();}
+
+async function initApp(){
+  const r=await api('/auth/me');if(!r.ok){token='';localStorage.removeItem('agv');return;}
+  user=await r.json();document.getElementById('top-email').textContent=user.email;
+  document.getElementById('login-screen').style.display='none';document.getElementById('app').classList.add('on');
+  await loadFields();setRole(currentRole);
+}
+
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('overlay').classList.toggle('on');}
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('overlay').classList.remove('on');}
+
+async function loadFields(){
+  try{const r=await api('/fields');allFields=await r.json();
+    document.getElementById('fields-count').textContent=`${allFields.length} campos`;renderSidebar();
+    if(allFields.length&&!currentField)currentField=allFields[0];
+  }catch{document.getElementById('fields-list').innerHTML='<div class="empty">Error</div>';}
+}
+function renderSidebar(){
+  const el=document.getElementById('fields-list');
+  if(!allFields.length){el.innerHTML='<div class="empty">Sin campos.<br>Toca "+ Nuevo".</div>';return;}
+  el.innerHTML=allFields.map((f,i)=>`<div class="field-item${f.id===currentField?.id?' active':''}">
+    <div class="fi-body" onclick="pickField(${i})">
+      <div class="fi-name"><span class="fi-dot" style="background:${f.id===currentField?.id?'var(--green)':'#bcc8be'}"></span>${esc(f.name)}</div>
+      <div class="fi-meta">${esc(f.crop_type||'Sin cultivo')} · ${f.area_ha?.toFixed(1)??'?'} ha</div></div>
+    <button class="fi-del" title="Eliminar parcela" onclick="deleteField('${f.id}','${esc(f.name).replace(/'/g,"")}',event)">🗑</button></div>`).join('');
+}
+function pickField(i){currentField=allFields[i];renderSidebar();closeSidebar();
+  if(currentRole==='analisis')renderAnalisis();
+  else if(currentRole==='data')renderData();
+  else if(currentRole==='mayordomo'&&leafMap&&markers[currentField.id])markers[currentField.id].openPopup();}
+
+async function deleteField(id,name,ev){
+  if(ev)ev.stopPropagation();
+  if(!confirm(`¿Eliminar la parcela "${name}"?\n\nSe borrarán sus datos satelitales y tareas. Esta acción no se puede deshacer.`))return;
+  try{
+    const r=await api(`/fields/${id}`,{method:'DELETE'});
+    if(r.status===204||r.ok){
+      allFields=allFields.filter(f=>f.id!==id);
+      if(currentField?.id===id)currentField=allFields[0]||null;
+      document.getElementById('fields-count').textContent=`${allFields.length} campos`;
+      renderSidebar();toast(`Parcela "${name}" eliminada`);
+      if(currentField)setRole(currentRole);
+      else document.getElementById('content').innerHTML='<div class="empty">Sin parcelas. Toca "+ Nuevo" para crear una.</div>';
+    }else toast('No se pudo eliminar');
+  }catch{toast('Error al eliminar');}
+}
+
+// ── ROLE ROUTER ──
+function setRole(role){
+  currentRole=role;leafMap=null;markers={};renderTabs();
+  if(_anPoll){clearInterval(_anPoll);_anPoll=null;}
+  // Field-centric views keep the sidebar; cross-field role views hide it.
+  document.getElementById('sidebar').classList.toggle('hidden',!(role==='mayordomo'||role==='analisis'||role==='data'));closeSidebar();
+  ({analisis:renderAnalisis,data:renderData,duenio:renderDuenio,mayordomo:renderMayordomo,regador:renderRegador,agronomo:renderAgronomo,trabajador:renderTrabajador,cuenta:renderCuenta,plan:renderPlan,notif:renderNotif,reportes:renderReportes,whatsapp:renderWhatsApp}[role])();
+}
+
+// ════ DUEÑO ════
+async function renderDuenio(){
+  const c=document.getElementById('content');c.innerHTML='<div class="empty">Cargando panorama del rancho…</div>';
+  try{
+    const d=await(await api('/ranch/overview')).json();const f=d.financial,sg=f.sgma;
+    const col=d.ranch_score>=70?'var(--green)':d.ranch_score>=45?'var(--yellow)':'var(--red)';const deg=(d.ranch_score||0)*3.6;
+    const _alertFields=(d.fields||[]).filter(x=>x.status==='crítico'||x.status==='atención');
+    const _alertLines=_alertFields.map(x=>`${x.name}: ${x.status}${x.ndvi!=null?` (NDVI ${x.ndvi})`:''}`);
+    c.innerHTML=`
+    <div class="view-head"><div class="view-title">Panel del Dueño</div><div class="view-sub">Salud del rancho y resumen del negocio</div></div>
+    <div class="grid g4">
+      <div class="card" style="text-align:center"><div class="stat-label">Salud del rancho</div>
+        <div class="score-ring" style="background:conic-gradient(${col} ${deg}deg,#e0e7e1 0)"><div class="inner"><div class="num" style="color:${col}">${d.ranch_score??'—'}</div><div class="lbl">${d.ranch_status}</div></div></div></div>
+      <div class="card"><div class="stat-label">Ahorro del mes <span class="demo-tag">demo</span></div>
+        <div class="big-num" style="color:var(--green)">$${f.monthly_savings_usd.toLocaleString()}</div>
+        <div class="stat-sub">${f.monthly_water_saved_m3.toLocaleString()} m³ agua · ${f.monthly_fertilizer_saved_kg} kg fert.</div></div>
+      <div class="card"><div class="stat-label">Agua SGMA <span class="demo-tag">demo</span></div>
+        <div class="big-num" style="color:${sg.pct_used<80?'var(--blue)':'var(--red)'}">${sg.pct_used}%</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${sg.pct_used}%;background:${sg.pct_used<80?'var(--blue)':'var(--red)'}"></div></div>
+        <div class="stat-sub">${sg.used_m3.toLocaleString()} / ${sg.allocation_m3.toLocaleString()} m³</div></div>
+      <div class="card"><div class="stat-label">Parcelas</div><div class="big-num">${d.total_fields}</div>
+        <div class="stat-sub">Sanas ${d.field_status_counts['sano']} · Atención ${d.field_status_counts['atención']} · Críticas ${d.field_status_counts['crítico']}</div></div>
+    </div>
+    <div class="card"><div class="card-title">Resumen ejecutivo</div><p style="font-size:.96rem;line-height:1.6">${esc(d.executive_summary)}</p>
+      <p style="font-size:.72rem;color:var(--muted);margin-top:.6rem">Nota: ${esc(f.disclaimer)}</p></div>
+    <div class="card"><div class="card-title">Estado por parcela</div>
+      <table class="tbl"><thead><tr><th>Parcela</th><th>Cultivo</th><th>NDVI</th><th>Salud</th></tr></thead><tbody>
+      ${d.fields.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.crop_type||'—')}</td><td>${x.ndvi??'—'}</td>
+        <td><span class="pill ${statusPill(x.status)}">${x.score??'—'} · ${x.status}</span></td></tr>`).join('')}</tbody></table>
+      ${waBar('Resumen del rancho',_alertLines)}</div>`;
+  }catch{c.innerHTML='<div class="empty">Error al cargar el panel del dueño.</div>';}
+}
+
+// ════ MAYORDOMO (mapa con pines de tareas) ════
+async function renderMayordomo(){
+  const c=document.getElementById('content');
+  c.innerHTML=`
+    <div class="view-head"><div class="view-title">Tareas de hoy</div><div class="view-sub">Toca un pin para ir al punto · activa "Crear tarea" y toca el mapa para agregar una</div>
+      <div style="flex:1"></div>
+      <button class="add-btn" onclick="genTasks()">Actualizar (IA)</button></div>
+    <div class="grid g2">
+      <div id="tasks-list"><div class="empty">Cargando tareas…</div></div>
+      <div class="card map-card">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Mapa de tareas</span>
+          <button class="add-btn" id="create-mode-btn" onclick="toggleCreateMode()">➕ Crear tarea</button></div>
+        <div id="map"></div>
+        <div class="map-legend">
+          <span><span class="legend-dot" style="background:#c62828"></span>Urgente</span>
+          <span><span class="legend-dot" style="background:#e65100"></span>Importante</span>
+          <span><span class="legend-dot" style="background:#b8860b"></span>Programada</span>
+          <span id="create-hint" style="color:var(--green);font-weight:600;display:none">Toca el mapa para colocar la tarea…</span>
+        </div></div>
+    </div>`;
+  await loadTasksAndMap();
+}
+
+// Crear tarea con un clic en el mapa
+let mapCreateMode=false, _newTaskPoint=null;
+function toggleCreateMode(){
+  mapCreateMode=!mapCreateMode;
+  const b=document.getElementById('create-mode-btn');
+  b.textContent=mapCreateMode?'✕ Cancelar':'➕ Crear tarea';
+  b.style.background=mapCreateMode?'var(--red-bg)':'';
+  document.getElementById('create-hint').style.display=mapCreateMode?'inline':'none';
+  if(leafMap)leafMap.getContainer().style.cursor=mapCreateMode?'crosshair':'';
+}
+function _pointInPoly(lat,lon,geom){
+  try{const ring=geom.coordinates[0];let inside=false;
+    for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+      const xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];
+      if(((yi>lat)!==(yj>lat))&&(lon<(xj-xi)*(lat-yi)/(yj-yi)+xi))inside=!inside;}
+    return inside;}catch{return false;}
+}
+function onMapClickCreate(e){
+  if(!mapCreateMode)return;
+  const {lat,lng}=e.latlng;
+  // ¿en qué parcela cayó el clic? si no, usa la activa/primera.
+  let fid=null;for(const f of allFields){if(_pointInPoly(lat,lng,f.geometry)){fid=f.id;break;}}
+  fid=fid||currentField?.id||allFields[0]?.id;
+  if(!fid){toast('Crea una parcela primero');return;}
+  _newTaskPoint={lat,lon:lng,field_id:fid};
+  document.getElementById('mt-coords').textContent=`${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  document.getElementById('mt-title').value='';document.getElementById('mt-qty').value='';
+  document.getElementById('modal-maptask').classList.add('on');
+}
+async function saveMapTask(){
+  if(!_newTaskPoint)return;
+  const title=document.getElementById('mt-title').value.trim();
+  if(!title){document.getElementById('mt-err').textContent='Ponle un título.';return;}
+  const body={task_type:document.getElementById('mt-type').value,title,
+    detail:'Creada manualmente en el mapa.',priority:parseInt(document.getElementById('mt-prio').value),
+    recommended_value:document.getElementById('mt-qty').value||null,
+    lat:_newTaskPoint.lat,lon:_newTaskPoint.lon};
+  try{
+    await api(`/fields/${_newTaskPoint.field_id}/tasks`,{method:'POST',body:JSON.stringify(body)});
+    closeModal('maptask');toast('Tarea creada en el mapa');toggleCreateMode();loadTasksAndMap();
+  }catch{document.getElementById('mt-err').textContent='Error al crear.';}
+}
+
+let tasksByField={};
+async function loadTasksAndMap(){
+  const el=document.getElementById('tasks-list');
+  let tasks=[];
+  try{tasks=await(await api('/tasks?status=pendiente')).json();}catch{el.innerHTML='<div class="empty">Error al cargar tareas.</div>';return;}
+
+  // render list
+  if(!tasks.length){el.innerHTML='<div class="card"><div class="empty">No hay tareas pendientes.<br>Toca "Actualizar tareas".</div></div>';}
+  else{
+    el.innerHTML=tasks.map(t=>`<div class="task prio-${t.priority}" id="task-${t.id}">
+      <span class="cat cat-${t.task_type}">${CAT[t.task_type]||'Tarea'}</span>
+      <div class="task-body"><div class="task-title">${esc(t.field_name||'')}</div><div class="task-detail">${esc(t.detail||'')}</div></div>
+      ${t.recommended_value?`<div class="task-qty">${esc(t.recommended_value)}</div>`:''}
+      <div class="task-btns">
+        <button class="tbtn tbtn-photo" title="Subir foto" onclick="openPhoto('${t.field_id}','${t.id}','${esc(t.title)}')">Foto</button>
+        <button class="tbtn tbtn-done" title="Marcar hecho" onclick="doneTask('${t.id}')">✓</button>
+      </div></div>`).join('');
+  }
+
+  // build map — UN PIN POR TAREA en su punto (lat/lon) o el centro de la parcela
+  initMap();
+  leafMap.off('click', onMapClickCreate);
+  leafMap.on('click', onMapClickCreate);
+  for(const k in markers){leafMap.removeLayer(markers[k]);}markers={};
+  // dibuja contornos de parcelas para ubicarse
+  if(window._fieldOutlines)window._fieldOutlines.forEach(o=>leafMap.removeLayer(o));
+  window._fieldOutlines=[];
+  const ctrByField={};
+  for(const f of allFields){const ctr=centroid(f.geometry);ctrByField[f.id]=ctr;
+    try{window._fieldOutlines.push(L.geoJSON(f.geometry,{style:{color:'#ffca28',weight:2.5,opacity:.95,fill:true,fillColor:'#ffca28',fillOpacity:.06,lineJoin:'round'}}).addTo(leafMap));}catch{}}
+  const pts=[];
+  tasks.forEach((t,i)=>{
+    const pt=(t.lat&&t.lon)?[t.lat,t.lon]:ctrByField[t.field_id];
+    if(!pt)return;
+    const col=prioColor(t.priority);
+    const icon=L.divIcon({className:'',html:`<div class="pin-marker" style="background:${col}"></div>`,iconSize:[22,22],iconAnchor:[11,20]});
+    const m=L.marker(pt,{icon}).addTo(leafMap);
+    const gmaps=`https://www.google.com/maps/dir/?api=1&destination=${pt[0]},${pt[1]}`;
+    m.bindPopup(`<b style="font-size:.92rem">${esc(t.field_name||'')}</b><br><b>${CAT[t.task_type]||'Tarea'}</b> — ${esc(t.detail||t.title)} ${t.recommended_value?'<b>('+esc(t.recommended_value)+')</b>':''}<br>
+      <a class="popup-go" href="${gmaps}" target="_blank">Cómo llegar</a> <button onclick="doneTask('${t.id}')" style="border:none;background:#2e7d32;color:#fff;border-radius:6px;padding:.3rem .6rem;cursor:pointer;margin-top:.3rem">✓ Hecho</button>`);
+    markers[t.id]=m;pts.push(pt);
+  });
+  if(pts.length)leafMap.fitBounds(pts,{padding:[40,40],maxZoom:14});
+  setTimeout(()=>leafMap.invalidateSize(),200);
+}
+// ── Alertas por WhatsApp (demo) — abre WhatsApp con el mensaje ya escrito ──
+let _waMsgs={},_waSeq=0;
+function waPhone(){return (localStorage.getItem('agv_wa_phone')||'').replace(/[^0-9]/g,'');}
+function waSetPhone(v){localStorage.setItem('agv_wa_phone',v||'');}
+function waSend(text){window.open(`https://wa.me/${waPhone()}?text=${encodeURIComponent(text)}`,'_blank');}
+function waMsg(field,lines){
+  return `🚨 *Agrolytics — Alerta*\n📍 ${field}\n`+lines.map(l=>'• '+l).join('\n')+`\n\n_${new Date().toLocaleString('es-MX')}_`;
+}
+// Builds the "cuando haya alertas" bar: a WhatsApp send button + optional destination number.
+function waBar(field,lines){
+  if(!lines||!lines.length)return '';
+  const id='wa'+(_waSeq++);_waMsgs[id]=waMsg(field,lines);
+  return `<div class="wa-bar">
+    <button class="wa-btn" onclick="waSend(_waMsgs['${id}'])">📲 Enviar alerta por WhatsApp</button>
+    <span style="font-size:.78rem;color:#1b5e3f">${lines.length} alerta(s)</span>
+    <span style="flex:1"></span>
+    <input type="tel" placeholder="Enviar a (+52…)" value="${esc(localStorage.getItem('agv_wa_phone')||'')}"
+      onchange="waSetPhone(this.value)" title="Número destino (opcional). Vacío = elegir contacto al enviar.">
+  </div>`;
+}
+
+// ── Agriculture line icons (inline SVG, no external deps) ──
+const ICONS={
+  leaf:'<path d="M11 21A8 8 0 0 1 4 13C4 7 9 3 20 3c0 9-5 13-11 13v5"/><path d="M8 17c2-4 5-6 9-7"/>',
+  water:'<path d="M12 3s6 6.6 6 10.5a6 6 0 0 1-12 0C6 9.6 12 3 12 3z"/>',
+  pest:'<path d="M12 8a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0v-2a4 4 0 0 1 4-4z"/><path d="M12 8V5M9 6 7.5 4M15 6l1.5-2M6 12H3m18 0h-3M6.5 16 4 17.5m13.5-1.5 2.5 1.5"/>',
+  wheat:'<path d="M12 22V8"/><path d="M12 8c-2.2 0-3.5-1.6-3.5-3.5C10.7 4.5 12 6.1 12 8zm0 0c2.2 0 3.5-1.6 3.5-3.5C13.3 4.5 12 6.1 12 8zM12 15c-2.2 0-3.5-1.6-3.5-3.5C10.7 11.5 12 13.1 12 15zm0 0c2.2 0 3.5-1.6 3.5-3.5C13.3 11.5 12 13.1 12 15z"/>',
+  chart:'<path d="M4 4v16h16"/><path d="M8 16v-4m4 4V8m4 8v-6"/>',
+  sprout:'<path d="M12 22V11"/><path d="M12 11C12 8 14 6 17 6c0 3-2 5-5 5zm0 0C12 8 10 6 7 6c0 3 2 5 5 5z"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M19 5l-1.4 1.4M5 19l1.4-1.4"/>',
+  bell:'<path d="M18 9a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7"/><path d="M10.5 20a1.7 1.7 0 0 0 3 0"/>',
+  doc:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+  wa:'<path d="M12 2.5A9.5 9.5 0 0 0 3.8 16.7L2.5 21.5l4.9-1.3A9.5 9.5 0 1 0 12 2.5z"/><path d="M8.8 8.4c.3-.7.6-.7 1-.7l.7.1c.2.2.6 1.3.6 1.6s-.5.8-.7 1.1c.4 1 1.5 2.1 2.6 2.5.3-.2.8-.8 1.1-.7.3 0 1.5.6 1.6.9l-.1.9c-.2.5-1.2 1.1-2 1-1.4-.2-3-1.1-4-2.2-.9-1-1.7-2.4-1.6-3.4 0-.5.5-.9.8-1.1z"/>',
+  gear:'<circle cx="12" cy="12" r="3.2"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3h-4l-.4 2.5a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2 1.2l.4 2.5h4l.4-2.5a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.06-.4.1-.8.1-1.2z"/>',
+  pins:'<path d="M12 21s-6-5.3-6-10a6 6 0 1 1 12 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/>',
+  drop2:'<path d="M12 3s6 6.6 6 10.5a6 6 0 0 1-12 0C6 9.6 12 3 12 3z"/><path d="M12 17a3.5 3.5 0 0 1-3.5-3.5"/>',
+};
+const TABS=[['analisis','Panel','leaf'],['mayordomo','Tareas','pins'],['regador','Riego','water'],['notif','Alertas','bell'],['reportes','Reportes','doc'],['whatsapp','WhatsApp','wa'],['cuenta','','gear']];
+function renderTabs(){
+  const el=document.getElementById('main-tabs');if(!el)return;
+  el.innerHTML=TABS.map(([v,label,icon])=>
+    `<button class="tab ${currentRole===v?'active':''}" onclick="setRole('${v}')" title="${label||'Configuración'}">${ic(icon)}${label?` ${label}`:''}</button>`).join('');
+}
+function ic(n){return `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]||''}</svg>`;}
+// What the current raster measures (shown above the map).
+function mapMeaning(i){const m=(typeof IDX_PLAIN!=='undefined')&&IDX_PLAIN[i];return m?m.what:(i==='RIESGO'?'Riesgo de plagas por zona (rojo = alto)':'');}
+// Per-pixel hover: read value from the downsampled grid at the cursor's lat/lon.
+async function loadPixelGrid(){
+  window._anGrid=null;
+  try{const g=await(await api(`/fields/${currentField.id}/analysis/grid?index=${analysisIndex}`)).json();
+    if(g&&g.bounds)window._anGrid=g;}catch{}
+}
+function anHover(e){
+  const t=document.getElementById('px-tip'),g=window._anGrid;
+  if(!t||!g||!g.bounds){if(t)t.style.display='none';return;}
+  const [w,s,e2,n]=g.bounds,{lat,lng}=e.latlng;
+  if(lng<w||lng>e2||lat<s||lat>n){t.style.display='none';return;}
+  const col=Math.floor((lng-w)/(e2-w)*g.cols),row=Math.floor((n-lat)/(n-s)*g.rows);
+  const v=g.values[row]&&g.values[row][col];
+  if(v==null){t.style.display='none';return;}
+  const p=e.containerPoint;t.style.left=p.x+'px';t.style.top=p.y+'px';
+  t.textContent=`${g.index}: ${v}`;t.style.display='block';
+}
+function quickGuideHtml(){
+  if(localStorage.getItem('agv_guide')==='off')return '';
+  return `<div class="quick-guide" id="quick-guide">${ic('leaf')}<b>Guía rápida</b>
+    <div class="steps"><span>1 · Elige lote a la izquierda</span><span>2 · Revisa analítica y tareas arriba</span><span>3 · Explora el mapa por índice y fecha</span><span>4 · Envía alertas por WhatsApp</span></div>
+    <button class="qx" title="Ocultar" onclick="localStorage.setItem('agv_guide','off');this.parentElement.remove()">✕</button></div>`;
+}
+
+function initMap(){
+  leafMap=L.map('map',{attributionControl:false}).setView([20,-100],4);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:21,maxNativeZoom:19,attribution:'Esri'}).addTo(leafMap);
+}
+async function genTasks(){toast('Analizando campos…');try{const d=await(await api('/tasks/generate',{method:'POST'})).json();toast(d.message);loadTasksAndMap();}catch{toast('Error al generar tareas');}}
+async function doneTask(id){try{await api(`/tasks/${id}/complete`,{method:'POST'});toast('Tarea completada');loadTasksAndMap();}catch{toast('Error');}}
+
+// ════ REGADOR ════
+async function renderRegador(){
+  const c=document.getElementById('content');c.innerHTML='<div class="empty">Cargando plan de riego…</div>';
+  try{
+    const d=await(await api('/irrigation/schedule')).json();const wb=d.water_budget;
+    c.innerHTML=`
+    <div class="view-head"><div class="view-title">Plan de Riego</div><div class="view-sub">Calendario, humedad y presupuesto de agua</div></div>
+    <div class="grid g2">
+      <div class="card"><div class="card-title">Presupuesto de agua SGMA <span class="demo-tag">demo</span></div>
+        <div class="big-num" style="color:${wb.pct_used<80?'var(--blue)':'var(--red)'}">${wb.pct_used}%</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${wb.pct_used}%;background:${wb.pct_used<80?'var(--blue)':'var(--red)'}"></div></div>
+        <div class="stat-sub">Usado ${wb.used_m3.toLocaleString()} m³ · Restante ${wb.remaining_m3.toLocaleString()} m³ de ${wb.allocation_m3.toLocaleString()} m³</div></div>
+      <div class="card"><div class="card-title">Riegos pendientes</div>
+        ${d.schedule.length?d.schedule.map(s=>`<div class="task prio-${s.priority}"><span class="cat cat-riego">Riego</span>
+          <div class="task-body"><div class="task-title">${esc(s.field_name)}</div><div class="task-detail">${esc(s.title)}</div></div>
+          <div class="task-qty">${esc(s.amount||'')}</div></div>`).join(''):'<div class="empty">Sin riegos pendientes</div>'}</div>
+    </div>
+    <div class="card"><div class="card-title">Humedad del suelo por parcela <span class="demo-tag">satelital</span></div>
+      <table class="tbl"><thead><tr><th>Parcela</th><th>NDMI</th><th>Radar (RVI)</th><th>Humedad</th></tr></thead><tbody>
+      ${d.moisture.map(m=>{const p=m.moisture_pct;const col=p==null?'#62736a':p>55?'var(--blue)':p>30?'var(--yellow)':'var(--red)';
+        return `<tr><td>${esc(m.name)}</td><td>${m.ndmi??'—'}</td><td>${m.rvi??'—'}</td>
+        <td style="min-width:150px">${p==null?'—':`<div class="bar-track" style="margin:0 0 .2rem"><div class="bar-fill" style="width:${p}%;background:${col}"></div></div><span style="font-size:.74rem;color:var(--muted)">${p}%</span>`}</td></tr>`;}).join('')}
+      </tbody></table></div>`;
+  }catch{c.innerHTML='<div class="empty">Error al cargar el plan de riego.</div>';}
+}
+
+// ════ AGRÓNOMO ════
+async function renderAgronomo(){
+  const c=document.getElementById('content');c.innerHTML='<div class="empty">Cargando portafolio…</div>';
+  try{
+    const d=await(await api('/portfolio')).json();
+    c.innerHTML=`
+    <div class="view-head"><div class="view-title">Portafolio Agronómico</div><div class="view-sub">${d.total} parcelas asesoradas</div>
+      <div style="flex:1"></div><button class="add-btn no-print" onclick="window.print()">Exportar</button></div>
+    <div class="card"><div class="card-title">Resumen de parcelas</div>
+      <table class="tbl"><thead><tr><th>Parcela</th><th>Cultivo</th><th>Área</th><th>NDVI</th><th>Tareas</th><th>Riesgo de plaga <span class="demo-tag">demo</span></th></tr></thead><tbody>
+      ${d.fields.map(f=>`<tr><td>${esc(f.name)}</td><td>${esc(f.crop_type||'—')}</td><td>${f.area_ha?.toFixed(1)??'?'} ha</td>
+        <td>${f.ndvi??'—'}</td><td>${f.open_tasks?`<span class="pill pill-warn">${f.open_tasks}</span>`:'<span class="pill pill-ok">0</span>'}</td>
+        <td><span class="pill ${statusPill(f.pest_risk.level)}">${f.pest_risk.level}</span> ${esc(f.pest_risk.pest)}</td></tr>`).join('')}
+      </tbody></table>
+      <p style="font-size:.72rem;color:var(--muted);margin-top:.7rem">Riesgo de plaga: estimación de demostración por cultivo y humedad foliar.</p></div>`;
+  }catch{c.innerHTML='<div class="empty">Error al cargar el portafolio.</div>';}
+}
+
+// ════ TRABAJADOR ════
+async function renderTrabajador(){
+  const c=document.getElementById('content');c.innerHTML='<div class="empty">Cargando…</div>';
+  try{
+    const tasks=await(await api('/tasks?status=pendiente')).json();
+    const verbo={riego:'Regar',fertilizacion:'Fertilizar',inspeccion:'Revisar',otro:'Hacer'};
+    const fieldCtr={};for(const f of allFields)fieldCtr[f.id]=centroid(f.geometry);
+    c.innerHTML=`<div class="worker-wrap">
+      <div class="view-head" style="justify-content:center;margin-bottom:.4rem"><div class="view-title">Mis tareas de hoy</div></div>
+      ${tasks.length?tasks.slice(0,10).map(t=>{
+        const ctr=fieldCtr[t.field_id];const go=ctr?`https://www.google.com/maps/dir/?api=1&destination=${ctr[0]},${ctr[1]}`:'#';
+        return `<div class="worker-task" style="border-left-color:${prioColor(t.priority)}">
+        <div class="wt-top"><span class="wt-cat cat-${t.task_type}">${CAT[t.task_type]}</span></div>
+        <div class="wt-title">${verbo[t.task_type]||''}: ${esc(t.field_name||'')}</div>
+        <div class="wt-sub">${t.recommended_value?'Cantidad: '+esc(t.recommended_value):esc(t.detail||'')}</div>
+        <div class="wt-actions"><button class="worker-done" onclick="doneTaskWorker('${t.id}')">✓ Hecho</button>
+          <a class="worker-go" href="${go}" target="_blank">Cómo llegar</a></div></div>`;}).join(''):
+        '<div class="empty" style="font-size:1.1rem">No hay tareas pendientes hoy</div>'}
+      <p class="empty" style="font-size:.76rem">Instrucciones por voz y WhatsApp — próximamente</p>
+    </div>`;
+  }catch{c.innerHTML='<div class="empty">Error</div>';}
+}
+async function doneTaskWorker(id){try{await api(`/tasks/${id}/complete`,{method:'POST'});toast('Tarea marcada como hecha');renderTrabajador();}catch{toast('Error');}}
+
+// ════ ALERTAS (notificaciones) ════
+async function renderNotif(){
+  const c=document.getElementById('content');c.innerHTML='<div class="empty">Buscando alertas…</div>';
+  try{
+    const [ov,tasks]=await Promise.all([
+      api('/ranch/overview').then(r=>r.json()).catch(()=>null),
+      api('/tasks?status=pendiente').then(r=>r.json()).catch(()=>[]),
+    ]);
+    const items=[];
+    (ov&&ov.fields||[]).forEach(f=>{
+      if(f.status==='crítico'||f.status==='atención')
+        items.push({sev:f.status==='crítico'?1:2,txt:`${f.name}: estado ${f.status}${f.ndvi!=null?` (NDVI ${f.ndvi})`:''}`});
+    });
+    tasks.forEach(t=>items.push({sev:t.priority<=1?1:3,txt:`${t.field_name||''}: ${t.title}${t.recommended_value?` (${t.recommended_value})`:''}`}));
+    items.sort((a,b)=>a.sev-b.sev);
+    const sevPill=s=>s===1?'pill-crit':s===2?'pill-warn':'pill-info';
+    const sevName=s=>s===1?'urgente':s===2?'atención':'tarea';
+    c.innerHTML=`
+      <div class="view-head"><div class="view-title">${ic('bell')} Alertas</div><div class="view-sub">${items.length} activas</div></div>
+      <div class="card">
+        ${items.length?items.map(i=>`<div style="display:flex;align-items:center;gap:.7rem;padding:.55rem 0;border-bottom:1px solid var(--line)">
+          <span class="pill ${sevPill(i.sev)}">${sevName(i.sev)}</span><span style="flex:1;font-size:.9rem">${esc(i.txt)}</span>
+          <button class="wa-btn" style="padding:.35rem .6rem" onclick="waSend(waMsg('Agrolytics',['${esc(i.txt).replace(/'/g,"\\'")}']))">${ic('wa')}</button>
+        </div>`).join(''):'<div class="empty">Sin alertas. Todo en orden.</div>'}
+        ${items.length?`<div style="margin-top:.7rem"><button class="wa-btn" onclick="waSend(waMsg('Resumen Agrolytics',${JSON.stringify(items.map(i=>i.txt)).replace(/"/g,'&quot;')}))">${ic('wa')} Enviar todo por WhatsApp</button></div>`:''}
+      </div>`;
+  }catch{c.innerHTML='<div class="empty">Error al cargar alertas.</div>';}
+}
+
+// ════ REPORTES (PDF por día) ════
+async function renderReportes(){
+  const c=document.getElementById('content');
+  const today=new Date().toISOString().slice(0,10);
+  c.innerHTML=`
+    <div class="view-head"><div class="view-title">${ic('doc')} Reportes</div><div class="view-sub">Genera un PDF con la información de un día</div></div>
+    <div class="card no-print" style="display:flex;gap:.7rem;flex-wrap:wrap;align-items:end">
+      <label class="map-ctl" style="flex-direction:column;align-items:start">Parcela
+        <select id="rp-field">${allFields.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')}</select></label>
+      <label class="map-ctl" style="flex-direction:column;align-items:start">Día
+        <input type="date" id="rp-date" value="${today}" max="${today}" style="border:1px solid var(--line);border-radius:8px;padding:.32rem .5rem"></label>
+      <button class="add-btn" onclick="buildReport()">Generar</button>
+      <button class="add-btn" onclick="window.print()" title="Guardar como PDF desde el diálogo de impresión">Descargar PDF</button>
+    </div>
+    <div id="report-area"><div class="empty">Elige parcela y día, luego "Generar".</div></div>`;
+}
+async function buildReport(){
+  const fid=document.getElementById('rp-field').value,day=document.getElementById('rp-date').value;
+  const f=allFields.find(x=>x.id===fid);const area=document.getElementById('report-area');
+  area.innerHTML='<div class="empty">Armando reporte…</div>';
+  try{
+    const [ts,adv,tasks]=await Promise.all([
+      api(`/fields/${fid}/analysis/timeseries?index=NDVI&days=400`).then(r=>r.json()).catch(()=>({series:[]})),
+      api(`/fields/${fid}/advisory`).then(r=>r.json()).catch(()=>null),
+      api(`/tasks?field_id=${fid}`).then(r=>r.json()).catch(()=>[]),
+    ]);
+    const upto=(ts.series||[]).filter(p=>p.date<=day).sort((a,b)=>a.date<b.date?1:-1);
+    const latest=upto[0];
+    const dayTasks=tasks.filter(t=>(t.due_date||'').slice(0,10)===day||(t.completed_at||'').slice(0,10)===day);
+    area.innerHTML=`
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--green);padding-bottom:.5rem;margin-bottom:.7rem">
+          <div><div style="font-size:1.25rem;font-weight:800;color:var(--green)">Agrolytics — Reporte diario</div>
+          <div style="font-size:.85rem;color:var(--muted)">${esc(f?f.name:'')} · ${esc(f&&f.crop_type||'—')} · ${f&&f.area_ha?f.area_ha.toFixed(1)+' ha':''}</div></div>
+          <div style="font-weight:800">${day}</div></div>
+        <h4 style="margin:.6rem 0 .3rem">Vegetación (NDVI)</h4>
+        <p style="font-size:.9rem">${latest?`Última observación al ${latest.date}: <b>NDVI ${latest.value}</b> (${latest.value>0.5?'vegetación sana':latest.value>0.35?'normal':'atención: vigor bajo'}).`:'Sin observaciones satelitales hasta esa fecha.'}</p>
+        <h4 style="margin:.6rem 0 .3rem">Clima y riego</h4>
+        <p style="font-size:.9rem">${adv&&adv.today?`ET0 ${adv.today.etc_mm!=null?`· ETc ${adv.today.etc_mm} mm (Kc ${adv.today.kc})`:adv.today.et0+' mm'} · lluvia ${adv.today.rain_mm??0} mm · ${esc(adv.irrigation?adv.irrigation.message:'')}`:'Clima no disponible.'}</p>
+        ${adv&&adv.frost&&adv.frost.risk?`<p style="font-size:.9rem;color:#c62828"><b>⚠ ${esc(adv.frost.message)}</b></p>`:''}
+        <h4 style="margin:.6rem 0 .3rem">Tareas del día (${dayTasks.length})</h4>
+        ${dayTasks.length?`<ul style="font-size:.9rem;margin-left:1.1rem">${dayTasks.map(t=>`<li>${esc(t.title)} — ${t.status}${t.recommended_value?` (${esc(t.recommended_value)})`:''}</li>`).join('')}</ul>`:'<p style="font-size:.9rem;color:var(--muted)">Sin tareas ese día.</p>'}
+        <p style="font-size:.72rem;color:var(--muted);margin-top:1rem">Generado por Agrolytics · datos Sentinel-2 + Open-Meteo · ${new Date().toLocaleString('es-MX')}</p>
+      </div>`;
+  }catch{area.innerHTML='<div class="empty">Error al armar el reporte.</div>';}
+}
+
+// ════ WHATSAPP (contactos + mensajes) ════
+function waContacts(){try{return JSON.parse(localStorage.getItem('agv_wa_contacts')||'[]');}catch{return [];}}
+function waSaveContacts(l){localStorage.setItem('agv_wa_contacts',JSON.stringify(l));}
+function renderWhatsApp(){
+  const c=document.getElementById('content');const list=waContacts();
+  c.innerHTML=`
+    <div class="view-head"><div class="view-title">${ic('wa')} WhatsApp</div><div class="view-sub">Contactos y envío de mensajes</div></div>
+    <div class="grid g2">
+      <div class="card"><div class="card-title">Contactos</div>
+        ${list.length?list.map((x,i)=>`<div class="wa-contact"><b>${esc(x.name)}</b><span style="color:var(--muted);font-size:.85rem">${esc(x.phone)}</span>
+          <button class="wa-btn" style="padding:.3rem .55rem" onclick="waTo=${i};document.getElementById('wa-dest').textContent='→ ${esc(x.name)}'">${ic('wa')}</button>
+          <button class="add-btn" onclick="const l=waContacts();l.splice(${i},1);waSaveContacts(l);renderWhatsApp()">✕</button></div>`).join('')
+        :'<div class="empty">Sin contactos aún.</div>'}
+        <div style="display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap">
+          <input id="wa-nc-name" placeholder="Nombre" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:.45rem .6rem">
+          <input id="wa-nc-phone" placeholder="+52 646…" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:.45rem .6rem">
+          <button class="add-btn" onclick="const n=document.getElementById('wa-nc-name').value.trim(),p=document.getElementById('wa-nc-phone').value.trim();if(!n||!p)return toast('Nombre y teléfono');const l=waContacts();l.push({name:n,phone:p});waSaveContacts(l);renderWhatsApp()">+ Agregar</button>
+        </div></div>
+      <div class="card"><div class="card-title">Mensaje <span id="wa-dest" style="color:var(--green);font-size:.8rem"></span></div>
+        <textarea id="wa-msg" rows="5" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:.6rem .7rem;font-size:.9rem" placeholder="Escribe el mensaje… (o genera desde Alertas)"></textarea>
+        <div style="margin-top:.6rem;display:flex;gap:.6rem;flex-wrap:wrap">
+          <button class="wa-btn" onclick="const t=document.getElementById('wa-msg').value.trim();if(!t)return toast('Escribe un mensaje');const l=waContacts();const ph=(typeof waTo==='number'&&l[waTo])?l[waTo].phone.replace(/[^0-9]/g,''):'';window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(t),'_blank')">${ic('wa')} Enviar por WhatsApp</button>
+        </div>
+        <p style="font-size:.74rem;color:var(--muted);margin-top:.5rem">Elige un contacto con su botón ${'de WhatsApp'} o envía sin destino y selecciona el chat en la app.</p></div>
+    </div>`;
+}
+let waTo=null;
+
+// ════ ANÁLISIS MULTI-SATÉLITE ════
+const SENSOR_COLOR={s2:'#2e7d32',ls:'#1565c0',modis:'#e65100',s1:'#6a1b9a',fused:'#9c27b0'};
+const SENSOR_NAME={s2:'Sentinel-2 (10m)',ls:'Landsat (30m)',modis:'MODIS (250m)',s1:'Sentinel-1 (10m)',fused:'Fusionado (estimado)'};
+let analysisIndex='NDMI',anChart=null,ovA=null,ovB=null,sbs=null;
+
+async function renderAnalisis(){
+  const c=document.getElementById('content');
+  if(!currentField){c.innerHTML='<div class="empty">Selecciona un campo en la barra lateral.</div>';return;}
+  chatMsgs=[];proposed=[];  // reset assistant per parcela
+  c.innerHTML=`
+    ${quickGuideHtml()}
+    <div class="view-head"><div><div class="view-title">${ic('leaf')} ${esc(currentField.name)}</div>
+      <div class="view-sub">Panel diario · analítica, tareas y mapa en una vista</div></div>
+      <div style="flex:1"></div>
+    </div>
+    <div class="grid g3" id="pillars" style="margin-bottom:.2rem">
+      <div class="card"><div class="empty">Cargando pilares…</div></div></div>
+    <div id="an-alerts"></div>
+    <div class="an-grid">
+      <!-- IZQUIERDA: rásters siempre visibles -->
+      <div class="an-left">
+        <div class="card map-card">
+          <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">
+            <span><b>Mapa · ${analysisIndex}</b> <span style="color:var(--muted);font-weight:400">— ${mapMeaning(analysisIndex)}</span></span>
+            <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+              <label class="map-ctl">Capa
+                <select id="an-index" onchange="setAnIndex(this.value)">
+                  <option>NDVI</option><option>NDMI</option><option>NDRE</option><option>EVI</option><option>RIESGO</option></select></label>
+              <label class="map-ctl">Fecha
+                <select id="an-layer" onchange="updateLayers()"></select></label>
+              <button class="add-btn" type="button" onclick="anRefreshData()" title="Descargar / actualizar fechas satelitales">⟳ Cargar</button>
+            </div>
+          </div>
+          <div class="map-wrap"><div id="map"></div><div id="px-tip" class="px-tip"></div></div>
+          <div class="map-legend" id="an-colorbar"></div>
+        </div>
+      </div>
+      <!-- DERECHA: análisis + actividades -->
+      <div class="an-right">
+        ${profileCardHtml(currentField)}
+        <div class="card"><div class="card-title">Serie de tiempo multi-sensor</div>
+          <div style="height:210px;position:relative"><canvas id="an-chart"></canvas></div>
+          <div id="an-legend" style="display:flex;gap:.8rem;flex-wrap:wrap;margin-top:.5rem;font-size:.74rem;color:var(--muted)"></div>
+          <div style="margin-top:.6rem"><button class="add-btn" onclick="doFuse()">Fusionar (rellenar huecos)</button>
+            <span id="an-fuse-note" style="font-size:.74rem;color:var(--muted);margin-left:.6rem"></span></div>
+        </div>
+        <!-- Asistente IA oculto de momento (código intacto para reactivar) -->
+        <div class="card">
+          <div class="card-title">Tareas de la parcela</div>
+          <div id="proposed-tasks" style="display:none"></div>
+          <div id="an-tasks"><div class="empty" style="padding:.7rem">Cargando…</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card"><div class="card-title">${ic('chart')} Seguimiento en el tiempo</div>
+      <div class="tables-wrap">
+        <div class="tables-side">
+          <button class="tbl-tab active" onclick="showTable('plagas',this)">${ic('pest')} Plagas</button>
+          <button class="tbl-tab" onclick="showTable('fenologia',this)">${ic('sprout')} Fenología</button>
+          <button class="tbl-tab" onclick="showTable('indices',this)">${ic('chart')} Índices</button>
+          <button class="tbl-tab" onclick="showTable('clima',this)">${ic('sun')} Clima y tareas</button>
+        </div>
+        <div class="tables-body" id="tables-body"><div class="empty">Cargando…</div></div>
+      </div>
+    </div>
+    <div class="card"><div class="card-title">${ic('drop2')} Humedad de la planta vs demanda de la atmósfera</div>
+      <div class="grid g2">
+        <div><div style="font-size:.78rem;font-weight:700;color:var(--blue);margin-bottom:.2rem">Humedad foliar (NDMI)</div>
+          <div style="height:130px;position:relative"><canvas id="he-ndmi"></canvas></div></div>
+        <div><div style="font-size:.78rem;font-weight:700;color:#e65100;margin-bottom:.2rem">Evapotranspiración ET0 (mm/día)</div>
+          <div style="height:130px;position:relative"><canvas id="he-et0"></canvas></div></div>
+      </div>
+      <p style="font-size:.84rem;color:var(--muted);line-height:1.55;margin-top:.6rem"><b>Cómo leerlo:</b> el NDMI dice cuánta agua <b>tiene</b> la planta en sus hojas; la ET0 dice cuánta agua le <b>exige</b> la atmósfera cada día (evaporación + transpiración). Si la humedad baja mientras la demanda sube, el riego no repone lo que el clima extrae: <b>hay que regar</b>. Si la humedad se mantiene estable con demanda alta, el riego actual es suficiente.</p>
+    </div>`;
+  document.getElementById('an-index').value=analysisIndex;
+  loadPillars();
+  await loadAnChart();
+  await loadAnLayers();
+  await loadAnTasks();
+  showTable('plagas');
+  loadHumEvap();
+}
+
+let heC1=null,heC2=null;
+async function loadHumEvap(){
+  try{
+    const [ts,wx]=await Promise.all([
+      api(`/fields/${currentField.id}/analysis/timeseries?index=NDMI&days=90`).then(r=>r.json()).catch(()=>({series:[]})),
+      api(`/fields/${currentField.id}/weather`).then(r=>r.json()).catch(()=>null),
+    ]);
+    const mini={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{displayColors:false}},
+      scales:{x:{ticks:{color:'#8a998f',font:{size:8},maxTicksLimit:5},grid:{display:false},border:{display:false}},
+              y:{ticks:{color:'#8a998f',font:{size:9}},grid:{color:'rgba(0,0,0,.05)'},border:{display:false}}}};
+    const nd={};(ts.series||[]).forEach(p=>{if(nd[p.date]==null||p.sensor==='s2')nd[p.date]=p.value;});
+    const nl=Object.keys(nd).sort();
+    const c1=document.getElementById('he-ndmi');
+    if(c1){if(heC1)heC1.destroy();
+      heC1=new Chart(c1.getContext('2d'),{type:'line',data:{labels:nl,datasets:[{data:nl.map(d=>nd[d]),
+        borderColor:'#1565c0',backgroundColor:'#1565c022',borderWidth:2,pointRadius:2,tension:.25,fill:true,spanGaps:true}]},options:mini});}
+    const dl=(wx&&wx.daily&&wx.daily.time)||[],et=(wx&&wx.daily&&wx.daily.et0_fao_evapotranspiration)||[];
+    const c2=document.getElementById('he-et0');
+    if(c2&&dl.length){if(heC2)heC2.destroy();
+      heC2=new Chart(c2.getContext('2d'),{type:'bar',data:{labels:dl,datasets:[{data:et,
+        backgroundColor:'#e6510088',borderColor:'#e65100',borderWidth:1,borderRadius:3}]},options:mini});}
+  }catch{}
+}
+
+// ── Sidebar de tablas de seguimiento ──
+function showTable(which, btn){
+  document.querySelectorAll('.tbl-tab').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  else{const t=document.querySelector(`.tbl-tab[onclick*="'${which}'"]`);if(t)t.classList.add('active');}
+  ({plagas:tablePlagas,fenologia:tableFenologia,indices:tableIndices,clima:tableClima}[which])();
+}
+
+async function tablePlagas(){
+  const el=document.getElementById('tables-body');el.innerHTML='<div class="empty">Analizando plagas…</div>';
+  try{
+    const d=await(await api(`/fields/${currentField.id}/pests`)).json();
+    const wx=d.weather||{};
+    const rows=d.pests.map(p=>`<div class="pest-row ${p.level}">
+      <div class="pest-head"><span class="pest-name">${esc(p.name)} <span class="pest-kind">${p.kind==='fungal'?'hongo':'insecto'}</span></span>
+        <span class="pill ${statusPill(p.level)}">riesgo ${p.level} · ${p.score}</span></div>
+      <div class="pest-drivers">${p.drivers.map(esc).join(' · ')}</div>
+      <div class="pest-scout">${esc(p.scout||'')}</div></div>`).join('');
+    el.innerHTML=`
+      <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem">Clima: ${wx.temp!=null?wx.temp+'°C':'—'} · ${wx.humidity!=null?wx.humidity+'% HR':''} · humedad foliar ${wx.wet_hours??'—'} h</div>
+      ${rows||'<div class="empty">Sin plagas activas.</div>'}
+      <button class="add-btn" style="margin-top:.6rem" onclick="managePests()">Gestionar plagas de mi zona</button>
+      <div id="pest-manage"></div>`;
+  }catch{el.innerHTML='<div class="empty">Error al cargar plagas.</div>';}
+}
+async function managePests(){
+  const box=document.getElementById('pest-manage');
+  if(box.innerHTML){box.innerHTML='';return;}
+  const d=await(await api(`/fields/${currentField.id}/pest-catalog`)).json();
+  box.innerHTML=`<div class="pest-manage" style="margin-top:.6rem;background:var(--card2);border-radius:10px;padding:.7rem .9rem">
+    <div style="font-size:.78rem;color:var(--muted);margin-bottom:.4rem">Activá las plagas que te importan en tu zona:</div>
+    ${d.catalog.map(c=>`<label><input type="checkbox" value="${c.key}" ${c.active?'checked':''}> ${esc(c.name)} <span style="color:var(--muted);font-size:.72rem">(${c.kind==='fungal'?'hongo':'insecto'})</span></label>`).join('')}
+    <button class="save-btn" style="margin-top:.6rem" onclick="savePests()">Guardar selección</button></div>`;
+}
+async function savePests(){
+  const keys=[...document.querySelectorAll('#pest-manage input:checked')].map(i=>i.value);
+  try{await api(`/fields/${currentField.id}/pest-catalog`,{method:'PATCH',body:JSON.stringify({active:keys})});toast('Plagas actualizadas');tablePlagas();}catch{toast('Error');}
+}
+
+let _fenoCurve=[];
+async function tableFenologia(){
+  const el=document.getElementById('tables-body');el.innerHTML='<div class="empty">Cargando fenología…</div>';
+  try{
+    const d=await(await api(`/fields/${currentField.id}/phenology`)).json();
+    const vcol=d.vigor==='por encima de lo esperado'?'var(--green)':d.vigor==='por debajo de lo esperado'?'var(--red)':'var(--muted)';
+    const summary=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin-bottom:.7rem">
+        <div class="card" style="box-shadow:none"><div class="stat-label">Etapa</div><div style="font-weight:700">${esc(d.stage)}</div><div class="stat-sub">${d.days_since_planting!=null?d.days_since_planting+' días · '+(d.progress_pct??'')+'%':'sin fecha de siembra'}</div></div>
+        <div class="card" style="box-shadow:none"><div class="stat-label">NDVI actual / esperado</div><div style="font-weight:700">${d.current_ndvi??'—'} / ${d.expected_ndvi??'—'}</div></div>
+        <div class="card" style="box-shadow:none"><div class="stat-label">Vigor</div><div style="font-weight:700;color:${vcol}">${esc(d.vigor||'—')}</div></div>
+      </div>`;
+    const curve=d.curve||[];
+    _fenoCurve=curve;
+    if(!curve.length){
+      el.innerHTML=summary+'<div class="empty">Define la fecha de siembra (en el perfil) para ver la evolución fenológica.</div>';return;
+    }
+    el.innerHTML=summary+`
+      <div class="timeline">
+        <div class="timeline-head">
+          <div><span class="timeline-date" id="fn-date"></span> <span class="timeline-sub" id="fn-days"></span></div>
+          <div style="display:flex;gap:.3rem"><button class="tl-nav" onclick="fnStep(-1)">‹</button><button class="tl-nav" onclick="fnStep(1)">›</button></div>
+        </div>
+        <input type="range" id="fn-slider" min="0" max="${curve.length-1}" value="${curve.length-1}" oninput="fnAt(this.value)">
+        <div class="timeline-ends"><span>${curve[0].date}</span><span>← evolución del cultivo →</span><span>${curve[curve.length-1].date}</span></div>
+      </div>
+      <div id="fn-detail" style="margin-top:.6rem"></div>`;
+    fnAt(curve.length-1);
+  }catch{el.innerHTML='<div class="empty">Error</div>';}
+}
+function fnStep(d){const s=document.getElementById('fn-slider');if(!s)return;s.value=Math.max(0,Math.min(_fenoCurve.length-1,+s.value+d));fnAt(s.value);}
+function fnAt(i){
+  const p=_fenoCurve[+i];if(!p)return;
+  document.getElementById('fn-date').textContent=p.date;
+  document.getElementById('fn-days').textContent='· día '+p.days;
+  const delta=+(p.ndvi-p.expected).toFixed(3);
+  const vcol=delta>0.05?'var(--green)':delta<-0.05?'var(--red)':'var(--muted)';
+  const word=delta>0.05?'por encima de lo esperado':delta<-0.05?'por debajo de lo esperado':'según lo esperado';
+  const pct=Math.max(0,Math.min(100,Math.round(p.ndvi/0.9*100)));
+  document.getElementById('fn-detail').innerHTML=`
+    <div class="grid g3">
+      <div class="card" style="box-shadow:none"><div class="stat-label">NDVI observado</div><div style="font-size:1.3rem;font-weight:800;color:var(--green)">${p.ndvi}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:var(--green)"></div></div></div>
+      <div class="card" style="box-shadow:none"><div class="stat-label">NDVI esperado</div><div style="font-size:1.3rem;font-weight:800;color:var(--muted)">${p.expected}</div></div>
+      <div class="card" style="box-shadow:none"><div class="stat-label">Diferencia</div><div style="font-size:1.3rem;font-weight:800;color:${vcol}">${delta>0?'+':''}${delta}</div>
+        <div style="font-size:.74rem;color:${vcol}">${word}</div></div>
+    </div>`;
+}
+
+const IDX_PLAIN={
+  NDVI:{icon:'leaf',what:'Qué tan verde y sano está el cultivo',color:'#2e7d32',need:null,
+        interpret:v=>v>0.5?'Vegetación sana':v>0.35?'Normal':v>0.2?'Atención':'Bajo'},
+  NDMI:{icon:'water',what:'Humedad / agua en las hojas',color:'#1565c0',need:null,
+        interpret:v=>v>0.3?'Buena humedad':v>0.1?'Humedad moderada':'Estrés hídrico'},
+  NDRE:{icon:'sprout',what:'Nutrición y clorofila',color:'#7b1fa2',need:'Necesita Sentinel-2 (banda red-edge)',
+        interpret:v=>v>0.35?'Clorofila buena':v>0.2?'Moderada':'Déficit de nutrición'},
+  EVI:{icon:'wheat',what:'Vegetación densa (menos ruido del suelo)',color:'#2e7d32',need:null,
+        interpret:v=>v>0.5?'Vegetación densa':v>0.3?'Normal':'Baja'},
+};
+let _idxDates=[],_idxByDate={};
+async function tableIndices(){
+  const el=document.getElementById('tables-body');el.innerHTML='<div class="empty">Cargando índices…</div>';
+  try{
+    const idxs=['NDVI','NDMI','NDRE','EVI'];
+    const data=await Promise.all(idxs.map(i=>api(`/fields/${currentField.id}/analysis/timeseries?index=${i}&days=400`).then(r=>r.json())));
+    const byDate={};
+    data.forEach((d,i)=>{(d.series||[]).forEach(p=>{(byDate[p.date]??={sensor:p.sensor})[idxs[i]]=p.value;});});
+    const dates=Object.keys(byDate).sort();  // ascendente (viejo → nuevo)
+    if(!dates.length){el.innerHTML='<div class="empty">Sin datos satelitales aún. Ejecuta la ingesta.</div>';return;}
+    _idxDates=dates;_idxByDate=byDate;
+    el.innerHTML=`
+      <div class="timeline">
+        <div class="timeline-head">
+          <div><span class="timeline-date" id="idx-date"></span> <span class="timeline-sub" id="idx-sensor"></span></div>
+          <div style="display:flex;gap:.3rem">
+            <button class="tl-nav" onclick="idxStep(-1)">‹</button>
+            <button class="tl-nav" onclick="idxStep(1)">›</button>
+          </div>
+        </div>
+        <input type="range" id="idx-slider" min="0" max="${dates.length-1}" value="${dates.length-1}" oninput="idxAt(this.value)">
+        <div class="timeline-ends"><span>${dates[0]}</span><span>arrastra la barra para ver cada fecha →</span><span>${dates[dates.length-1]}</span></div>
+      </div>
+      <div class="grid g4" id="idx-cards" style="margin-top:.6rem"></div>`;
+    idxAt(dates.length-1);
+  }catch{el.innerHTML='<div class="empty">Error</div>';}
+}
+function idxStep(d){const s=document.getElementById('idx-slider');if(!s)return;s.value=Math.max(0,Math.min(_idxDates.length-1,+s.value+d));idxAt(s.value);}
+function idxAt(i){
+  const dt=_idxDates[+i];const r=_idxByDate[dt]||{};
+  document.getElementById('idx-date').textContent=dt;
+  document.getElementById('idx-sensor').textContent='· '+(SENSOR_NAME[r.sensor]||r.sensor||'');
+  document.getElementById('idx-cards').innerHTML=['NDVI','NDMI','NDRE','EVI'].map(k=>{
+    const v=r[k];const meta=IDX_PLAIN[k];
+    const status=v==null?'sin dato en esta fecha':meta.interpret(v);
+    const col=v==null?'var(--muted)':meta.color;
+    return `<div class="card" style="box-shadow:none;padding:.7rem .8rem">
+      <div style="font-size:.82rem;font-weight:700">${ic(meta.icon)} ${k}</div>
+      <div style="font-size:.73rem;color:var(--muted);margin:.15rem 0 .3rem">${meta.what}</div>
+      <div style="font-size:1.3rem;font-weight:800;color:${col}">${v!=null?v.toFixed(2):'—'}</div>
+      <div style="font-size:.73rem;color:${v==null?'var(--muted)':'var(--text2)'}">${esc(status)}</div>
+      ${v==null&&meta.need?`<div style="font-size:.67rem;color:var(--muted);margin-top:.2rem">${esc(meta.need)}</div>`:''}
+    </div>`;}).join('');
+}
+
+async function tableClima(){
+  const el=document.getElementById('tables-body');el.innerHTML='<div class="empty">Cargando…</div>';
+  try{
+    const [wxR,tkR]=await Promise.all([
+      api(`/fields/${currentField.id}/weather`).then(r=>r.json()).catch(()=>null),
+      api(`/tasks?status=hecho&field_id=${currentField.id}`).then(r=>r.json()).catch(()=>[]),
+    ]);
+    let wxHtml='<div class="empty" style="padding:.5rem">Clima no disponible</div>';
+    if(wxR&&wxR.current){const cur=wxR.current;wxHtml=`<div class="wx-pills" style="grid-template-columns:repeat(4,1fr)">
+      <div class="wx-pill"><div class="wx-l">Temp</div><div class="wx-v">${cur.temperature_2m}°C</div></div>
+      <div class="wx-pill"><div class="wx-l">Humedad</div><div class="wx-v">${cur.relative_humidity_2m}%</div></div>
+      <div class="wx-pill"><div class="wx-l">Viento</div><div class="wx-v">${cur.windspeed_10m} km/h</div></div>
+      <div class="wx-pill"><div class="wx-l">Lluvia</div><div class="wx-v">${cur.precipitation} mm</div></div></div>`;}
+    const tasks=(tkR||[]).slice(0,15);
+    const tk=tasks.length?`<table class="tbl"><thead><tr><th>Tarea</th><th>Tipo</th><th>Completada</th></tr></thead><tbody>
+      ${tasks.map(t=>`<tr><td>${esc(t.title)}</td><td>${CAT[t.task_type]||t.task_type}</td><td>${t.completed_at?t.completed_at.slice(0,10):'—'}</td></tr>`).join('')}</tbody></table>`
+      :'<div class="empty" style="padding:.7rem">Aún no hay tareas completadas.</div>';
+    el.innerHTML=`<div style="font-size:.76rem;color:var(--muted);margin-bottom:.3rem">Clima actual</div>${wxHtml}
+      <div style="font-size:.76rem;color:var(--muted);margin:.7rem 0 .3rem">Historial de tareas</div>${tk}`;
+  }catch{el.innerHTML='<div class="empty">Error</div>';}
+}
+
+const PILL_STATUS={ok:'pill-ok','atención':'pill-warn','sin datos':'pill-info',crítico:'pill-crit',bajo:'pill-ok',medio:'pill-warn',alto:'pill-crit'};
+async function loadPillars(){
+  const el=document.getElementById('pillars');if(!el)return;
+  try{
+    const d=await(await api(`/fields/${currentField.id}/pillars`)).json();
+    const a=d.agua_suelo,p=d.plagas,b=d.biomasa;
+    el.innerHTML=`
+      <div class="card">
+        <div class="card-title">${ic('water')} Agua y Suelo</div>
+        <div class="big-num" style="font-size:1.6rem;color:var(--blue)">${a.moisture_pct!=null?a.moisture_pct+'%':'—'}</div>
+        <div style="margin:.2rem 0"><span class="pill ${PILL_STATUS[a.status]||'pill-info'}">${a.status}</span> <span style="font-size:.74rem;color:var(--muted)">NDMI ${a.ndmi??'—'}</span></div>
+        <div style="font-size:.78rem;color:var(--muted);line-height:1.4">${esc(a.recommendation)}</div>
+      </div>
+      <div class="card">
+        <div class="card-title">${ic('pest')} Plagas</div>
+        <div style="font-size:.95rem;font-weight:700;margin-bottom:.2rem">${esc(p.pest)}</div>
+        <div style="margin:.2rem 0"><span class="pill ${PILL_STATUS[p.level]||'pill-info'}">riesgo ${p.level} · ${p.score}</span></div>
+        <div style="font-size:.74rem;color:var(--muted);line-height:1.45">${p.drivers.map(esc).join(' · ')}</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:.35rem">${p.weather&&p.weather.temp!=null?`Clima: ${p.weather.temp}°C · ${p.weather.humidity}% HR`:''}</div>
+      </div>
+      <div class="card">
+        <div class="card-title">${ic('wheat')} Biomasa</div>
+        ${b.status==='ok'?`
+          <div class="big-num" style="font-size:1.6rem;color:var(--green)">${b.biomass_t_ha} <span style="font-size:.9rem;color:var(--muted)">t/ha</span></div>
+          <div style="margin:.2rem 0"><span class="pill pill-ok">${esc(b.stage)}</span> <span style="font-size:.74rem;color:var(--muted)">NDVI ${b.current_ndvi} (${b.trend})</span></div>
+          <div style="font-size:.74rem;color:var(--muted)">${b.days_since_planting!=null?b.days_since_planting+' días desde siembra':'sin fecha de siembra'}</div>`
+        :'<div class="empty" style="padding:.6rem;font-size:.8rem">Sin datos de NDVI todavía.</div>'}
+      </div>`;
+    // WhatsApp "cuando haya alertas": surface a send button when a pillar warns.
+    const _al=[];
+    if(a.status==='crítico'||a.status==='atención')_al.push(`Agua/suelo: ${a.status}${a.ndmi!=null?` (NDMI ${a.ndmi})`:''}`);
+    if(p.level==='alto'||p.level==='medio')_al.push(`Plaga ${esc(p.pest)}: riesgo ${p.level}`);
+    const _ab=document.getElementById('an-alerts');if(_ab)_ab.innerHTML=waBar(currentField?currentField.name:'Parcela',_al);
+  }catch{el.innerHTML='<div class="card"><div class="empty">No se pudieron cargar los pilares.</div></div>';}
+}
+
+async function loadAnTasks(){
+  const el=document.getElementById('an-tasks');if(!el)return;
+  try{
+    const d=await(await api(`/tasks?status=pendiente&field_id=${currentField.id}`)).json();
+    if(!d.length){el.innerHTML='<div class="empty" style="padding:1rem">Sin tareas. Toca "Generar con IA" para analizar los datos.</div>';return;}
+    const icon={riego:'cat-riego',fertilizacion:'cat-fertilizacion',inspeccion:'cat-inspeccion',otro:'cat-otro'};
+    el.innerHTML=d.map(t=>`<div class="task prio-${t.priority}">
+      <span class="cat ${icon[t.task_type]}">${CAT[t.task_type]||'Tarea'}</span>
+      <div class="task-body"><div class="task-title">${esc(t.title)}</div><div class="task-detail">${esc(t.detail||'')}</div></div>
+      ${t.recommended_value?`<div class="task-qty">${esc(t.recommended_value)}</div>`:''}
+      <div class="task-btns"><button class="tbtn tbtn-done" onclick="doneTaskAn('${t.id}')">✓</button></div></div>`).join('');
+  }catch{el.innerHTML='<div class="empty">Error</div>';}
+}
+async function doneTaskAn(id){try{await api(`/tasks/${id}/complete`,{method:'POST'});toast('Hecho');loadAnTasks();}catch{toast('Error');}}
+
+// ── Asistente IA (chat por parcela: propone, el usuario confirma) ──
+let chatMsgs=[],proposed=[];
+function toggleAssistant(){
+  const body=document.getElementById('assistant-body'),btn=document.getElementById('assistant-toggle');
+  const open=body.style.display==='none';
+  body.style.display=open?'block':'none';btn.textContent=open?'Cerrar':'Abrir';
+  if(open&&!chatMsgs.length){
+    chatMsgs=[];proposed=[];renderChat();renderProposed();
+    pushBot(`Hola, soy tu asistente para ${currentField.name}. Pregúntame sobre los índices o pídeme tareas (riego, fertilización, inspección).`);
+  }
+}
+function pushBot(t){chatMsgs.push({role:'assistant',content:t});renderChat();}
+function renderChat(){
+  const el=document.getElementById('chat-msgs');if(!el)return;
+  el.innerHTML=chatMsgs.map(m=>`<div class="bubble ${m.role==='user'?'user':'bot'}">${esc(m.content)}</div>`).join('');
+  el.scrollTop=el.scrollHeight;
+}
+function fieldCtx(){
+  const f=currentField,c=f.context||{};
+  return {parcela:f.name,cultivo:f.crop_type,fecha_siembra:f.planting_date,
+          riego:c.riego,fertilizacion:c.fertilizacion,riesgos:c.riesgos};
+}
+async function chatSend(){
+  const inp=document.getElementById('chat-input');const text=inp.value.trim();if(!text)return;
+  inp.value='';chatMsgs.push({role:'user',content:text});renderChat();
+  chatMsgs.push({role:'assistant',content:'…'});renderChat();
+  try{
+    const r=await api('/chat',{method:'POST',body:JSON.stringify({messages:chatMsgs.filter(m=>m.content!=='…'),field_context:fieldCtx()})});
+    const d=await r.json();chatMsgs.pop();
+    pushBot(r.ok?(d.reply||'(sin respuesta)'):'Error del asistente.');
+  }catch{chatMsgs.pop();pushBot('No pude conectar con el asistente.');}
+}
+async function proposeTasks(){
+  pushBot('Analizando los datos de la parcela…');
+  try{
+    const r=await api(`/fields/${currentField.id}/tasks/propose`,{method:'POST',body:JSON.stringify({messages:chatMsgs.filter(m=>m.content!=='…').slice(-6)})});
+    const d=await r.json();chatMsgs.pop();pushBot(d.reply||'Listo.');
+    proposed=d.tasks||[];renderProposed();
+  }catch{chatMsgs.pop();pushBot('No pude analizar ahora.');}
+}
+const CATNAME={riego:'Riego',fertilizacion:'Fertilizar',inspeccion:'Revisar',otro:'Tarea'};
+function renderProposed(){
+  const el=document.getElementById('proposed-tasks');if(!el)return;
+  if(!proposed.length){el.innerHTML='<div class="empty" style="padding:.7rem;font-size:.8rem">Sin propuestas aún.</div>';return;}
+  el.innerHTML=proposed.map((t,i)=>`<div class="proposed">
+    <div class="pt-title">${CATNAME[t.task_type]||'Tarea'}: ${esc(t.title)} ${t.recommended_value?`<span class="task-qty">${esc(t.recommended_value)}</span>`:''}</div>
+    <div class="pt-detail">${esc(t.detail||'')}</div>
+    <button class="pt-add" onclick="addProposed(${i})">Agregar</button>
+    <button class="pt-dismiss" onclick="dismissProposed(${i})">Descartar</button></div>`).join('');
+}
+async function addProposed(i){
+  const t=proposed[i];if(!t)return;
+  try{await api(`/fields/${currentField.id}/tasks`,{method:'POST',body:JSON.stringify(t)});
+    toast('Tarea agregada');proposed.splice(i,1);renderProposed();loadAnTasks();
+  }catch{toast('Error al agregar');}
+}
+function dismissProposed(i){proposed.splice(i,1);renderProposed();}
+
+// ════ DATA & PIPELINE ════
+async function downloadAuthed(path,filename){
+  try{const r=await api(path);const blob=await r.blob();const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);
+    toast('Descargado: '+filename);
+  }catch{toast('Error al descargar');}
+}
+async function renderData(){
+  const c=document.getElementById('content');
+  if(!currentField){c.innerHTML='<div class="empty">Selecciona un campo.</div>';return;}
+  c.innerHTML=`
+    <div class="view-head"><div class="view-title">Data &amp; pipeline</div>
+      <div class="view-sub">Datos crudos por parcela y exportación para fusión en la nube</div></div>
+    <div class="grid g2">
+      <div class="card"><div class="card-title">Inventario — ${esc(currentField.name)}</div>
+        <div id="data-inv"><div class="empty">Cargando…</div></div></div>
+      <div class="card"><div class="card-title">Exportar / Pipeline</div>
+        <p style="font-size:.85rem;color:var(--muted);line-height:1.5;margin-bottom:.8rem">Solo observaciones reales (sin datos sintéticos). Formato estándar listo para un job de fusión en la nube.</p>
+        <button class="action-btn" onclick="downloadAuthed('/fields/${currentField.id}/analysis/export?format=csv','parcela_${currentField.id}.csv')"><span class="ab-icon">⬇</span><div class="ab-text"><div class="ab-title">Exportar esta parcela (CSV)</div><div class="ab-sub">Series de todos los índices y sensores</div></div></button>
+        <button class="action-btn" onclick="downloadAuthed('/fields/${currentField.id}/analysis/export?format=json','parcela_${currentField.id}.json')"><span class="ab-icon">⬇</span><div class="ab-text"><div class="ab-title">Exportar esta parcela (JSON)</div></div></button>
+        <button class="action-btn" onclick="downloadAuthed('/data/bundle','rancho_bundle.json')"><span class="ab-icon">☁</span><div class="ab-text"><div class="ab-title">Bundle del rancho (JSON)</div><div class="ab-sub">Todas las parcelas — feed para fusión en cloud (job pendiente)</div></div></button>
+      </div>
+    </div>
+    <div class="card"><div class="card-title">Pipeline de datos</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;font-size:.85rem">
+        <span class="pill pill-ok">1 · Ingesta multi-sensor</span> →
+        <span class="pill pill-ok">2 · Normalización</span> →
+        <span class="pill pill-ok">3 · Export (CSV/JSON/bundle)</span> →
+        <span class="pill pill-info">4 · Fusión en cloud (pendiente)</span>
+      </div>
+      <p style="font-size:.74rem;color:var(--muted);margin-top:.7rem">Los pasos 1–3 corren aquí. El paso 4 (entrenamiento/fusión a gran escala) consume el bundle exportado.</p>
+    </div>`;
+  try{
+    const d=await(await api(`/fields/${currentField.id}/analysis/datastats`)).json();
+    const el=document.getElementById('data-inv');
+    if(!d.breakdown.length){el.innerHTML='<div class="empty">Sin datos reales todavía.</div>';return;}
+    el.innerHTML=`<div style="font-size:.8rem;color:var(--muted);margin-bottom:.4rem">${d.total_obs} observaciones reales</div>
+      <table class="tbl"><thead><tr><th>Sensor</th><th>Índice</th><th>Obs</th><th>Rásters</th><th>Rango</th></tr></thead><tbody>
+      ${d.breakdown.map(b=>`<tr><td>${SENSOR_NAME[b.sensor]||b.sensor}</td><td>${b.index}</td><td>${b.count}</td><td>${b.rasters}</td><td style="font-size:.76rem">${b.min} → ${b.max}</td></tr>`).join('')}
+      </tbody></table>`;
+  }catch{document.getElementById('data-inv').innerHTML='<div class="empty">Error</div>';}
+}
+function setAnIndex(v){analysisIndex=v;renderAnalisis();}
+
+function profileCardHtml(f){
+  const ctx=f.context||{};
+  const has=ctx.riego||ctx.fertilizacion||ctx.riesgos||f.planting_date;
+  const dias=f.planting_date?Math.round((Date.now()-new Date(f.planting_date))/8.64e7):null;
+  const row=(label,val)=>val?`<div style="margin-bottom:.35rem"><span style="font-size:.7rem;color:var(--muted);text-transform:uppercase;font-weight:700">${label}</span><br>${esc(val)}</div>`:'';
+  return `<div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+      <span>Perfil de la parcela ${has?'':'<span class="demo-tag" style="background:var(--blue-bg);color:var(--blue);border-color:#9cc4ee">incompleto</span>'}</span>
+      <button class="add-btn" onclick="wzStart('edit', allFields.find(x=>x.id==='${f.id}'))">${has?'Editar':'Completar'}</button></div>
+    ${has?`<div style="font-size:.86rem;line-height:1.5;display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+        ${row('Cultivo',f.crop_type)}${row('Siembra',f.planting_date?f.planting_date+(dias!=null?` · ${dias} días`:''):'')}
+        ${row('Riego y agua',ctx.riego)}${row('Fertilización',ctx.fertilizacion)}
+        ${row('Riesgos',ctx.riesgos)}${row('Cosecha estimada',f.expected_harvest)}
+      </div>`:'<div style="font-size:.85rem;color:var(--muted)">Sin contexto. Complétalo para que la IA mejore las recomendaciones (agua, fertilizante, siniestros).</div>'}
+  </div>`;
+}
+
+const IDX_NOTE={NDRE:'El NDRE solo lo da Sentinel-2 (banda red-edge). Si acabas de ingerir, aparecerá en breve.',
+  RVI:'El RVI viene del radar Sentinel-1. Ejecuta la ingesta de radar para verlo.'};
+async function loadAnChart(){
+  try{
+    const d=await(await api(`/fields/${currentField.id}/analysis/timeseries?index=${analysisIndex}&days=400`)).json();
+    if(!d.series||!d.series.length){
+      if(anChart){anChart.destroy();anChart=null;}
+      document.getElementById('an-legend').innerHTML=
+        `<span style="color:var(--muted)">Sin datos de ${analysisIndex} todavía. ${IDX_NOTE[analysisIndex]||'Ejecuta la ingesta satelital.'}</span>`;
+      return;
+    }
+    // One clean series: merge sources per date (prefer Sentinel-2). "How you show it".
+    const byDate={};
+    for(const p of d.series){if(byDate[p.date]==null||p.sensor==='s2')byDate[p.date]=p.value;}
+    const labels=Object.keys(byDate).sort();
+    const data=labels.map(dt=>byDate[dt]);
+    const meta=IDX_PLAIN[analysisIndex]||{color:'#2e7d32'};
+    const col=meta.color, sc=d.scale||[0,1];
+    const last=[...data].reverse().find(v=>v!=null);
+    const ctx=document.getElementById('an-chart').getContext('2d');
+    const grad=ctx.createLinearGradient(0,0,0,200);
+    grad.addColorStop(0,col+'2e');grad.addColorStop(1,col+'04');
+    if(anChart)anChart.destroy();
+    anChart=new Chart(ctx,{
+      type:'line',
+      data:{labels,datasets:[{label:analysisIndex,data,borderColor:col,backgroundColor:grad,
+        borderWidth:2,pointRadius:2.4,pointHoverRadius:7,pointBackgroundColor:col,
+        pointBorderColor:'#fff',pointBorderWidth:1.5,tension:.25,fill:true,spanGaps:true}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{legend:{display:false},
+          tooltip:{backgroundColor:'#16241a',padding:10,cornerRadius:8,displayColors:false,
+            callbacks:{title:i=>i[0].label,label:i=>`${analysisIndex}: ${i.parsed.y!=null?i.parsed.y.toFixed(3):'—'}`}}},
+        scales:{x:{ticks:{color:'#8a998f',font:{size:9},maxTicksLimit:7},grid:{display:false},border:{display:false}},
+                y:{min:sc[0],max:sc[1],ticks:{color:'#8a998f',font:{size:10}},grid:{color:'rgba(0,0,0,.05)'},border:{display:false}}}}});
+    document.getElementById('an-legend').innerHTML=
+      `<span style="display:inline-flex;align-items:center;gap:.4rem"><span style="width:22px;height:3px;border-radius:2px;background:${col}"></span>${analysisIndex} · ${labels.length} obs · último <b style="color:${col}">${last!=null?last.toFixed(3):'—'}</b></span>`;
+  }catch(e){console.warn(e);}
+}
+
+async function doFuse(){
+  const note=document.getElementById('an-fuse-note');note.textContent='Fusionando…';
+  try{
+    const d=await(await api(`/fields/${currentField.id}/analysis/fuse?index=${analysisIndex}`,{method:'POST'})).json();
+    note.textContent=`${d.n_observed} observados · ${d.n_fused} fusionados. ${d.n_fused?'':'(cobertura densa: sin huecos que rellenar)'}`;
+    toast('Normalización aplicada. '+(d.n_fused?d.n_fused+' puntos fusionados':'sin huecos que rellenar'));
+    // overlay fused points that fall on existing date labels (safe: no axis mutation)
+    if(d.series&&anChart){
+      const fmap={};d.series.filter(p=>p.sensor==='fused').forEach(p=>fmap[p.date]=p.value);
+      if(Object.keys(fmap).length){
+        anChart.data.datasets.push({label:SENSOR_NAME.fused,
+          data:anChart.data.labels.map(dt=>dt in fmap?fmap[dt]:null),
+          borderColor:SENSOR_COLOR.fused,backgroundColor:SENSOR_COLOR.fused,pointRadius:3,borderWidth:2,
+          borderDash:[5,4],tension:.3,fill:false,spanGaps:true,showLine:true});
+        anChart.update();
+      }
+    }
+  }catch{note.textContent='Error al fusionar.';}
+}
+
+async function loadAnLayers(skipInit){
+  let layers=[];
+  const src=analysisIndex==='RIESGO'?`/fields/${currentField.id}/pest-risk/layer`:`/fields/${currentField.id}/analysis/layers?index=${analysisIndex}`;
+  try{layers=await(await api(src)).json();}catch{}
+  const sel=document.getElementById('an-layer');
+  const opts=layers.map((l,i)=>`<option value="${i}">${l.date}</option>`).join('');
+  sel.innerHTML=opts||'<option value="">sin datos</option>';
+  window._anLayers=layers;
+  // Keep the same date across index switches; if that date has no raster for the
+  // new index, fall back to the closest earlier date (else finest+most recent).
+  if(layers.length){
+    let pick=-1;
+    const last=window._lastAnDate;
+    if(last){
+      const exact=layers.findIndex(l=>l.date===last);
+      if(exact>=0)pick=exact;
+      else{let b=null;layers.forEach((l,i)=>{if(l.date<=last&&(b===null||l.date>layers[b].date))b=i;});pick=b;}
+    }
+    if(pick==null||pick<0){pick=0;layers.forEach((l,i)=>{const b=layers[pick];
+      if(l.res_m<b.res_m||(l.res_m===b.res_m&&l.date>b.date))pick=i;});}
+    sel.value=String(pick);
+  }
+  // colorbar legend
+  const cbar=document.getElementById('an-colorbar');
+  if(analysisIndex==='RIESGO'){
+    const z=(layers[0]&&layers[0].zones)||{},pest=(layers[0]&&layers[0].pest)||'plaga';
+    cbar.innerHTML=`<span>Riesgo bajo</span><span style="flex:1;height:10px;border-radius:5px;background:linear-gradient(90deg,#2e8b3c,#ffc128,#c62828);min-width:120px"></span><span>alto</span>`+
+      `<span style="width:100%;margin-top:.35rem;color:var(--muted)">${esc(pest)} · zonas: bajo ${z.low??'—'}% · medio ${z.medium??'—'}% · alto ${z.high??'—'}%</span>`;
+  }else{
+    const ramp='linear-gradient(90deg,#ff3c1e,#ffd23c,#2e9b32)';
+    cbar.innerHTML=`<span>${analysisIndex} bajo</span><span style="flex:1;height:10px;border-radius:5px;background:${ramp};min-width:120px"></span><span>alto</span>`;
+  }
+  if(!skipInit||!leafMap)initAnMap();
+  if(layers.length)updateLayers();
+  loadPixelGrid();
+  loadAnomalyPins();
+}
+
+// Load / refresh satellite data, then poll and auto-update as new dates arrive.
+let _anPoll=null;
+async function anRefreshData(){
+  const before=(window._anLayers||[]).length;
+  try{await api(`/fields/${currentField.id}/ingest`,{method:'POST'});toast('Cargando datos satelitales…');}
+  catch{toast('No se pudo iniciar la carga');return;}
+  clearInterval(_anPoll);let ticks=0;
+  _anPoll=setInterval(async()=>{
+    ticks++;
+    await loadAnLayers(true);
+    const now=(window._anLayers||[]).length;
+    if(now>before){toast(`Fechas cargadas: ${now}`);}
+    if(now>before&&ticks>=3||ticks>=24){clearInterval(_anPoll);_anPoll=null;}  // stop when stable or ~2 min
+  },5000);
+}
+
+function initAnMap(){
+  if(leafMap){try{leafMap.remove();}catch{}leafMap=null;}
+  leafMap=L.map('map',{attributionControl:false}).setView([20,-100],4);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:21,maxNativeZoom:19,attribution:'Esri'}).addTo(leafMap);
+  leafMap.on('mousemove',anHover);
+  leafMap.on('mouseout',()=>{const t=document.getElementById('px-tip');if(t)t.style.display='none';});
+  // Contorno de la parcela (blanco para verse sobre la imagen satelital) + zoom al recuadro.
+  try{
+    const outline=L.geoJSON(currentField.geometry,{style:{color:'#ffca28',weight:2.5,opacity:.95,fill:true,fillColor:'#ffca28',fillOpacity:.06,lineJoin:'round'}}).addTo(leafMap);
+    const b=outline.getBounds();
+    if(b.isValid())leafMap.fitBounds(b,{padding:[24,24],maxZoom:18});
+  }catch{}
+}
+
+async function addOverlay(idx){
+  const l=window._anLayers[idx];if(!l)return null;
+  const bust=(l.url.includes('?')?'&':'?')+'_='+Date.now();
+  const r=await api(l.url.replace('/api/v1','')+bust);
+  const b=(r.headers.get('X-Raster-Bounds')||'').split(',').map(Number);
+  if(b.length!==4)return null;
+  const blob=await r.blob();const url=URL.createObjectURL(blob);
+  return L.imageOverlay(url,[[b[1],b[0]],[b[3],b[2]]],{opacity:1,className:'raster-layer',interactive:false}).addTo(leafMap);
+}
+
+async function updateLayers(){
+  if(ovA){leafMap.removeLayer(ovA);ovA=null;}
+  const a=document.getElementById('an-layer').value;
+  if(a!==''&&window._anLayers&&window._anLayers[+a])window._lastAnDate=window._anLayers[+a].date;
+  if(a!==''){ovA=await addOverlay(+a);}
+  // Keep framed on the field box (don't jump to the raster patch).
+  try{const ob=L.geoJSON(currentField.geometry).getBounds();if(ob.isValid())leafMap.fitBounds(ob,{padding:[24,24],maxZoom:18});}catch{}
+  setTimeout(()=>leafMap.invalidateSize(),150);
+}
+
+// ════ CUENTA (perfil · preferencias · notificaciones) ════
+async function renderCuenta(){
+  const c=document.getElementById('content');
+  let me=user;
+  try{me=await(await api('/auth/me')).json();user=me;}catch{}
+  const pr=me.preferences||{},nt=me.notifications||{};
+  const sw=(id,on,label)=>`<div class="toggle-row"><span style="font-size:.88rem">${label}</span>
+    <label class="switch"><input type="checkbox" id="${id}" ${on?'checked':''}><span class="slider"></span></label></div>`;
+  c.innerHTML=`
+    <div class="view-head"><div class="view-title">Configuración</div><div class="view-sub">Tu cuenta, preferencias y notificaciones</div></div>
+    <div class="grid g2">
+      <div class="card"><div class="card-title">Perfil</div>
+        <div class="form-row"><label>Nombre</label><input id="ac-name" value="${esc(me.full_name||'')}" placeholder="Tu nombre"/></div>
+        <div class="form-row"><label>Correo</label><input value="${esc(me.email)}" readonly/></div>
+        <div class="form-row"><label>Rol · Plan</label><input value="${esc(me.role)} · ${esc(me.plan)}" readonly/></div>
+        <div class="card-title" style="margin-top:1rem">Cambiar contraseña</div>
+        <div class="form-row"><label>Contraseña actual</label><input id="ac-cur" type="password"/></div>
+        <div class="form-row"><label>Nueva contraseña</label><input id="ac-new" type="password" placeholder="8+ caracteres con letras"/></div>
+        <button class="save-btn" onclick="changePass()">Actualizar contraseña</button>
+        <span id="ac-pass-msg" style="font-size:.8rem;margin-left:.6rem"></span>
+      </div>
+      <div>
+        <div class="card"><div class="card-title">Preferencias</div>
+          <div class="form-row"><label>Idioma</label><select id="ac-lang"><option value="es" ${pr.idioma==='es'?'selected':''}>Español</option><option value="en" ${pr.idioma==='en'?'selected':''}>English</option></select></div>
+          <div class="form-row"><label>Unidades de área</label><select id="ac-area"><option value="ha" ${pr.unidades!=='acre'?'selected':''}>Hectáreas (ha)</option><option value="acre" ${pr.unidades==='acre'?'selected':''}>Acres</option></select></div>
+          <div class="form-row"><label>Unidades de riego</label><select id="ac-water"><option value="mm" ${pr.agua!=='in'?'selected':''}>Milímetros (mm)</option><option value="in" ${pr.agua==='in'?'selected':''}>Pulgadas (in)</option></select></div>
+          <div class="form-row"><label>Tema</label><select id="ac-theme"><option value="claro">Claro</option></select></div>
+          <button class="save-btn" onclick="savePrefs()">Guardar preferencias</button>
+        </div>
+        <div class="card" style="margin-top:.9rem"><div class="card-title">Notificaciones</div>
+          ${sw('nt-riego',nt.riego!==false,'Alertas de riego')}
+          ${sw('nt-plagas',nt.plagas!==false,'Alertas de plagas')}
+          ${sw('nt-email',!!nt.email,'Resumen por correo')}
+          <button class="save-btn" style="margin-top:.7rem" onclick="saveNotif()">Guardar notificaciones</button>
+        </div>
+      </div>
+    </div>`;
+}
+async function changePass(){
+  const msg=document.getElementById('ac-pass-msg');
+  const cur=document.getElementById('ac-cur').value, nw=document.getElementById('ac-new').value;
+  if(!cur||!nw){msg.style.color='var(--red)';msg.textContent='Completa ambos campos.';return;}
+  try{
+    const r=await api('/auth/change-password',{method:'POST',body:JSON.stringify({current_password:cur,new_password:nw})});
+    const d=await r.json();
+    if(r.ok){msg.style.color='var(--green)';msg.textContent='✓ '+d.detail;document.getElementById('ac-cur').value='';document.getElementById('ac-new').value='';}
+    else{msg.style.color='var(--red)';msg.textContent=typeof d.detail==='string'?d.detail:'Error';}
+  }catch{msg.style.color='var(--red)';msg.textContent='Error de conexión.';}
+}
+async function savePrefs(){
+  const prefs={idioma:document.getElementById('ac-lang').value,unidades:document.getElementById('ac-area').value,agua:document.getElementById('ac-water').value,tema:document.getElementById('ac-theme').value};
+  const name=document.getElementById('ac-name').value;
+  try{await api('/auth/me',{method:'PATCH',body:JSON.stringify({full_name:name,preferences:prefs})});toast('Preferencias guardadas');}catch{toast('Error');}
+}
+async function saveNotif(){
+  const nt={riego:document.getElementById('nt-riego').checked,plagas:document.getElementById('nt-plagas').checked,email:document.getElementById('nt-email').checked};
+  try{await api('/auth/me',{method:'PATCH',body:JSON.stringify({notifications:nt})});toast('Notificaciones guardadas');}catch{toast('Error');}
+}
+
+// ════ PLAN Y FACTURACIÓN (preview de pasarelas) ════
+let _planChoice=null,_gwChoice=null;
+async function renderPlan(){
+  const c=document.getElementById('content');c.innerHTML='<div class="empty">Cargando planes…</div>';
+  try{
+    const d=await(await api('/billing/plans')).json();
+    const me=await(await api('/billing/me')).json();
+    const u=me.usage;
+    const cur=d.current_plan;
+    c.innerHTML=`
+      <div class="view-head"><div class="view-title">Plan y facturación</div>
+        <div class="view-sub">${esc(d.note)}</div></div>
+      <div class="card"><div class="card-title">Tu uso</div>
+        <div style="font-size:.9rem">Plan actual: <b>${esc(me.plan.name)}</b> · Parcelas: ${u.fields_used}${u.fields_limit?` / ${u.fields_limit}`:' (ilimitadas)'}</div>
+        ${u.fields_limit?`<div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,Math.round(u.fields_used/u.fields_limit*100))}%;background:var(--green)"></div></div>`:''}
+      </div>
+      <div class="plan-grid">
+        ${d.plans.map(p=>`<div class="plan-card ${p.key===cur?'current':''} ${p.key==='pro'?'featured':''}">
+          <div class="plan-name">${esc(p.name)} ${p.key===cur?'<span class="pill pill-ok">actual</span>':''} ${p.key==='pro'?'<span class="pill pill-info">popular</span>':''}</div>
+          <div class="plan-price">${esc(p.price_label)}</div>
+          <div class="plan-tag">${esc(p.tagline)}</div>
+          <ul class="plan-feats">${p.features.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>
+          ${p.key===cur?'<button class="plan-btn ghost" disabled>Tu plan</button>'
+            :p.key==='enterprise'?'<button class="plan-btn ghost" onclick="toast(\'Te contactaremos para Cooperativa\')">Contactar</button>'
+            :`<button class="plan-btn" onclick="choosePlan('${p.key}')">Elegir ${esc(p.name)}</button>`}
+        </div>`).join('')}
+      </div>
+      <div id="checkout-area"></div>`;
+  }catch{c.innerHTML='<div class="empty">No se pudieron cargar los planes.</div>';}
+}
+async function choosePlan(planKey){
+  _planChoice=planKey;_gwChoice=null;
+  const d=await(await api('/billing/plans')).json();
+  const area=document.getElementById('checkout-area');
+  area.innerHTML=`<div class="card" style="margin-top:.9rem">
+    <div class="card-title">Pagar plan ${esc(d.plans.find(p=>p.key===planKey).name)} <span class="preview-tag">PREVIEW · no se cobra</span></div>
+    <div style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem">Elegí una pasarela de pago (simulación):</div>
+    <div class="gw-grid">${d.gateways.map(g=>`<div class="gw" id="gw-${g.key}" onclick="pickGateway('${g.key}')"><div class="gw-name">${esc(g.name)}</div><div class="gw-desc">${esc(g.desc)}</div></div>`).join('')}</div>
+    <button class="save-btn" id="pay-btn" onclick="confirmPay()" disabled>Confirmar pago (simulado)</button>
+    <span id="pay-msg" style="font-size:.82rem;margin-left:.6rem"></span>
+  </div>`;
+  area.scrollIntoView({behavior:'smooth'});
+}
+function pickGateway(g){_gwChoice=g;document.querySelectorAll('.gw').forEach(e=>e.classList.remove('sel'));document.getElementById('gw-'+g).classList.add('sel');document.getElementById('pay-btn').disabled=false;}
+async function confirmPay(){
+  const msg=document.getElementById('pay-msg');msg.style.color='var(--muted)';msg.textContent='Procesando (simulado)…';
+  try{
+    const ck=await(await api('/billing/checkout',{method:'POST',body:JSON.stringify({plan:_planChoice,gateway:_gwChoice})})).json();
+    await api('/billing/subscribe',{method:'POST',body:JSON.stringify({plan:_planChoice})});
+    user.plan=_planChoice;
+    toast('Plan activado (simulado): '+_planChoice);
+    renderPlan();
+  }catch{msg.style.color='var(--red)';msg.textContent='Error en el pago simulado.';}
+}
+
+// ── PHOTO ──
+function openPhoto(fieldId,taskId,title){photoTaskCtx={fieldId,taskId};document.getElementById('photo-ctx').textContent='Tarea: '+title;document.getElementById('modal-photo').classList.add('on');}
+async function submitPhoto(){
+  const e=document.getElementById('ph-err');e.textContent='';
+  const file=document.getElementById('ph-file').files[0];if(!file){e.textContent='Selecciona o toma una foto.';return;}
+  const b=document.getElementById('ph-submit');b.disabled=true;b.innerHTML='<span class="spin"></span>Enviando…';
+  try{
+    const fd=new FormData();fd.append('file',file);
+    fd.append('alert_confirmed',document.querySelector('input[name=ph-confirm]:checked').value);
+    fd.append('caption',document.getElementById('ph-caption').value);
+    if(photoTaskCtx.taskId)fd.append('task_id',photoTaskCtx.taskId);
+    const r=await api(`/fields/${photoTaskCtx.fieldId}/photos`,{method:'POST',body:fd});
+    if(!r.ok){const d=await r.json();e.textContent=JSON.stringify(d.detail||d);return;}
+    closeModal('photo');toast('Foto enviada. ¡Gracias por validar!');document.getElementById('ph-file').value='';
+  }catch(err){e.textContent='Error: '+err.message;}finally{b.disabled=false;b.textContent='Enviar';}
+}
+
+// ════ WIZARD onboarding (slides) ════
+let wzMode='create',wzEditId=null,wzStep=0,wzData={},wzMap=null,wzDrawPts=[],wzPoly=null,wzMarkers=[];
+const DEFAULT_GEO='[[[-64.18,-31.42],[-64.17,-31.42],[-64.17,-31.43],[-64.18,-31.43],[-64.18,-31.42]]]';
+
+// Plantillas de workflow por tipo de manejo (prellenan el contexto del agricultor).
+const WORKFLOW_PRESETS={
+  "Hortaliza costera — bajo agua":{riego:"Riego por goteo, prioridad ahorro de agua",fertilizacion:"Fertirriego fraccionado, dosis mínimas",riesgos:"Salinidad por intrusión marina, heladas"},
+  "Manejo orgánico":{riego:"Goteo con sensores de humedad",fertilizacion:"Compost y abonos orgánicos",riesgos:"Plagas (control biológico), mildiú"},
+  "Convencional intensivo":{riego:"Aspersión programada",fertilizacion:"Urea + fosfato según etapa",riesgos:"Plagas, encharcamiento"},
+};
+function wzPickCrop(c){wzReadCurrent();wzData.crop_type=(c==='Otro'?'otro':c);wzRender();}
+function wzApplyPreset(name){
+  const p=WORKFLOW_PRESETS[name];if(!p)return;
+  wzData.riego=wzData.riego||p.riego;wzData.fertilizacion=wzData.fertilizacion||p.fertilizacion;wzData.riesgos=wzData.riesgos||p.riesgos;
+  toast('Plantilla aplicada: '+name);
+}
+
+// Dibujo del polígono en el mapa
+function wzInitMap(){
+  wzDrawPts=[];wzMarkers=[];wzPoly=null;
+  try{
+    const init=JSON.parse(wzData.geo||DEFAULT_GEO)[0].map(([x,y])=>[y,x]);
+    wzDrawPts=init.slice(0,-1);
+  }catch{}
+  wzMap=L.map('wz-map',{attributionControl:false});
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:21,maxNativeZoom:19,attribution:'Esri'}).addTo(wzMap);
+  wzMap.setView(wzDrawPts[0]||[20,-100],wzDrawPts.length?14:4);
+  wzMap.on('click',e=>{wzDrawPts.push([e.latlng.lat,e.latlng.lng]);wzRedraw();});
+  wzRedraw();setTimeout(()=>wzMap.invalidateSize(),150);
+}
+// Place search (Nominatim/OSM) — helps find San Quintín, Ensenada, etc. and fly there.
+async function wzGeoSearch(){
+  const q=document.getElementById('wz-search').value.trim();if(!q)return;
+  const box=document.getElementById('wz-search-res');box.innerHTML='<div class="wz-res muted">Buscando…</div>';
+  try{
+    const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&accept-language=es&countrycodes=mx,ar,cl,pe,co,bo,uy,py,ec&q=${encodeURIComponent(q)}`);
+    const d=await r.json();
+    box.innerHTML=d.length?d.map(x=>`<div class="wz-res" onclick="wzGoTo(${x.lat},${x.lon})">${esc(x.display_name)}</div>`).join(''):'<div class="wz-res muted">Sin resultados</div>';
+  }catch{box.innerHTML='<div class="wz-res muted">Error de búsqueda</div>';}
+}
+function wzGoTo(lat,lon){if(wzMap)wzMap.setView([+lat,+lon],15);document.getElementById('wz-search-res').innerHTML='';document.getElementById('wz-search').value='';}
+// Attention pins: below-expected raster spots (phenology/vigour anomalies).
+async function loadAnomalyPins(){
+  (window._anomPins||[]).forEach(m=>{try{leafMap.removeLayer(m);}catch{}});window._anomPins=[];
+  if(analysisIndex==='RIESGO'||!leafMap)return;
+  try{
+    const d=await(await api(`/fields/${currentField.id}/anomaly-points?index=${analysisIndex}`)).json();
+    (d.points||[]).forEach(p=>{
+      const m=L.marker([p.lat,p.lon],{icon:L.divIcon({className:'',html:'<div class="anom-pin"></div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(leafMap);
+      m.bindPopup(`<b>Anomalía</b><br>${analysisIndex}: ${p.value} (Δ ${p.delta})<br>Cambio fuera de lo esperado — revisar en campo`);
+      window._anomPins.push(m);
+    });
+  }catch{}
+}
+function wzRedraw(){
+  wzMarkers.forEach(m=>wzMap.removeLayer(m));wzMarkers=[];
+  if(wzPoly)wzMap.removeLayer(wzPoly);
+  wzDrawPts.forEach(p=>wzMarkers.push(L.circleMarker(p,{radius:5,color:'#2e7d32',fillOpacity:1}).addTo(wzMap)));
+  if(wzDrawPts.length>=3){wzPoly=L.polygon(wzDrawPts,{color:'#2e7d32',fillOpacity:.18}).addTo(wzMap);}
+  else if(wzDrawPts.length===2){wzPoly=L.polyline(wzDrawPts,{color:'#2e7d32'}).addTo(wzMap);}
+  const status=document.getElementById('wz-geo-status');
+  if(status){
+    const n=wzDrawPts.length;
+    status.textContent=n===0?'Tocá la primera esquina en el mapa':n<3?`${n} de 3 esquinas mínimas…`:`✓ Terreno marcado (${n} esquinas)`;
+    status.style.color=n>=3?'var(--green)':'var(--muted)';
+  }
+  if(wzDrawPts.length>=3){
+    const ring=wzDrawPts.map(([la,ln])=>[ln,la]);ring.push(ring[0]);
+    wzData.geo=JSON.stringify([ring]);
+    const ta=document.getElementById('wz-geo');if(ta)ta.value=wzData.geo;
+  }
+}
+function wzClearDraw(){wzDrawPts=[];wzRedraw();}
+function wzGeoFromText(){const ta=document.getElementById('wz-geo');wzData.geo=ta.value;
+  try{wzDrawPts=JSON.parse(ta.value)[0].slice(0,-1).map(([x,y])=>[y,x]);wzRedraw();if(wzDrawPts[0])wzMap.setView(wzDrawPts[0],14);}catch{}}
+
+const WZ_SLIDES=[
+  {ids:['wz-name'],html:d=>`
+    <div class="wz-kicker">Bienvenido</div><div class="wz-title">¿Cómo se llama la parcela?</div>
+    <div class="wz-help">Vamos a configurar tu parcela en unos pasos. Esto le da contexto a la IA para ahorrarte agua y fertilizante, y prevenir siniestros.</div>
+    <label>Nombre de la parcela</label><input id="wz-name" value="${esc(d.name||'')}" placeholder="Ej. Lote Norte"/>`},
+  {ids:['wz-geo'],map:true,html:d=>`
+    <div class="wz-kicker">Tu terreno</div><div class="wz-title">¿Dónde está tu parcela?</div>
+    <div class="wz-help">Tocá las <b>esquinas</b> de tu terreno en el mapa para marcarlo. Podés mover el mapa y hacer zoom. Con 3 esquinas o más ya queda dibujado.</div>
+    <div class="wz-search-box">
+      <input id="wz-search" placeholder="Buscar lugar: San Quintín, Ensenada, Mexicali…"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();wzGeoSearch();}">
+      <button class="add-btn" type="button" onclick="wzGeoSearch()">Buscar</button>
+    </div>
+    <div id="wz-search-res" class="wz-search-res"></div>
+    <div id="wz-map" style="height:280px;border-radius:11px;overflow:hidden;border:1px solid var(--border)"></div>
+    <div style="display:flex;gap:.6rem;align-items:center;margin-top:.6rem">
+      <button class="wz-back" type="button" onclick="wzClearDraw()">↺ Empezar de nuevo</button>
+      <span id="wz-geo-status" style="font-size:.82rem;color:var(--muted);font-weight:600"></span></div>
+    <details style="margin-top:.7rem"><summary style="font-size:.76rem;color:var(--muted);cursor:pointer">¿Ya tenés las coordenadas? Pegalas aquí</summary>
+      <textarea id="wz-geo" style="height:80px;font-family:monospace;font-size:.76rem;margin-top:.4rem" oninput="wzGeoFromText()">${esc(d.geo||DEFAULT_GEO)}</textarea></details>`},
+  {ids:['wz-plant','wz-preset'],html:d=>`
+    <div class="wz-kicker">Cultivo</div><div class="wz-title">¿Qué sembraste?</div>
+    <div class="wz-help">Elegí el cultivo. La fecha de siembra ayuda a la fenología (en vid se usa la temporada) — <b>si ya empezó sin registro, déjala en blanco</b> (no inventamos datos).</div>
+    <input type="hidden" id="wz-crop" value="${esc(d.crop_type||'')}"/>
+    <div class="crop-grid">
+      ${[['Lechuga','🥬'],['Espinaca','🌿'],['Brócoli','🥦'],['Coliflor','🥦'],['Fresa','🍓'],['Apio','🌱'],['Alcachofa','🌵'],['Vid','🍇'],['Otro','➕']].map(([c,e])=>
+        `<div class="crop-card ${d.crop_type===c||(c==='Otro'&&d.crop_type&&!['Lechuga','Espinaca','Brócoli','Coliflor','Fresa','Apio','Alcachofa','Vid'].includes(d.crop_type))?'sel':''}" onclick="wzPickCrop('${c}')"><div class="emoji">${e}</div><div class="nm">${c}</div></div>`).join('')}
+    </div>
+    <label>Plantilla de manejo (opcional) — prellena el contexto</label>
+    <select id="wz-preset" onchange="wzApplyPreset(this.value)"><option value="">— Ninguna —</option>
+      ${Object.keys(WORKFLOW_PRESETS).map(k=>`<option>${k}</option>`).join('')}</select>
+    <label>Fecha de siembra (opcional)</label><input type="date" id="wz-plant" value="${d.planting_date||''}"/>`},
+  {ids:['wz-riego'],chips:{el:'wz-riego',opts:['Goteo','Aspersión','Gravedad','Secano (temporal)','Agua de pozo','Agua limitada']},html:d=>`
+    <div class="wz-kicker">Meta: menos agua</div><div class="wz-title">¿Cómo riegas esta parcela?</div>
+    <div class="wz-help">Cuéntame en tus palabras: sistema de riego, fuente y si el agua es limitada.</div>
+    <label>Riego y agua</label><textarea id="wz-riego" placeholder="Ej. Riego por goteo, agua de pozo con cuota limitada en verano">${esc(d.riego||'')}</textarea>`},
+  {ids:['wz-fert'],chips:{el:'wz-fert',opts:['Urea','Fosfato','Compost','Fertirriego','No fertilizo']},html:d=>`
+    <div class="wz-kicker">Meta: menos fertilizante</div><div class="wz-title">¿Cómo fertilizas?</div>
+    <div class="wz-help">Qué producto usas y cada cuánto. Así la IA evita recomendar de más.</div>
+    <label>Fertilización</label><textarea id="wz-fert" placeholder="Ej. Urea cada 3 semanas, ya apliqué 2 veces esta temporada">${esc(d.fertilizacion||'')}</textarea>`},
+  {ids:['wz-riesgos','wz-harvest'],chips:{el:'wz-riesgos',opts:['Heladas','Plagas','Salinidad','Encharcamiento','Sequía','Viento']},html:d=>`
+    <div class="wz-kicker">Meta: prevenir siniestros</div><div class="wz-title">¿Qué problemas has tenido aquí?</div>
+    <div class="wz-help">Historial de riesgos de esta parcela. La cosecha estimada es solo una aproximación, no una fecha límite.</div>
+    <label>Riesgos / siniestros</label><textarea id="wz-riesgos" placeholder="Ej. Heladas tardías en julio, suelo con algo de salinidad">${esc(d.riesgos||'')}</textarea>
+    <label>Cosecha estimada (aproximada, opcional)</label><input type="date" id="wz-harvest" value="${d.expected_harvest||''}"/>`},
+];
+
+function wzStart(mode,field){
+  wzMode=mode;wzStep=0;wzEditId=field?field.id:null;
+  document.getElementById('wz-mode-label').textContent=mode==='edit'?'Editar parcela':'Nueva parcela';
+  if(mode==='edit'&&field){
+    const ctx=field.context||{};
+    wzData={name:field.name,geo:JSON.stringify(field.geometry.coordinates),crop_type:field.crop_type,
+      planting_date:field.planting_date||'',expected_harvest:field.expected_harvest||'',
+      riego:ctx.riego||'',fertilizacion:ctx.fertilizacion||'',riesgos:ctx.riesgos||''};
+  }else{wzData={};}
+  document.getElementById('wizard').classList.add('on');
+  wzRender();
+}
+function wzCancel(){document.getElementById('wizard').classList.remove('on');}
+
+function wzReadCurrent(){
+  for(const id of WZ_SLIDES[wzStep].ids){
+    const el=document.getElementById(id);if(!el)continue;
+    const key={'wz-name':'name','wz-geo':'geo','wz-crop':'crop_type','wz-plant':'planting_date',
+      'wz-riego':'riego','wz-fert':'fertilizacion','wz-riesgos':'riesgos','wz-harvest':'expected_harvest'}[id];
+    if(key)wzData[key]=el.value;
+  }
+}
+function wzRender(){
+  const s=WZ_SLIDES[wzStep];
+  document.getElementById('wz-dots').innerHTML=WZ_SLIDES.map((_,i)=>`<span class="wz-dot ${i===wzStep?'on':''}"></span>`).join('');
+  const slide=document.getElementById('wz-slide');
+  if(wzMap){try{wzMap.remove();}catch{}wzMap=null;}
+  slide.innerHTML=s.html(wzData)+(s.chips?`<div class="wz-chips">${s.chips.opts.map(o=>`<span class="wz-chip" onclick="wzChip('${s.chips.el}','${o}')">${o}</span>`).join('')}</div>`:'');
+  slide.classList.remove('out');void slide.offsetWidth;slide.style.animation='slideIn .4s ease both';
+  if(s.map)setTimeout(wzInitMap,60);
+  document.getElementById('wz-back').style.visibility=wzStep===0?'hidden':'visible';
+  document.getElementById('wz-next').textContent=wzStep===WZ_SLIDES.length-1?(wzMode==='edit'?'Guardar':'Crear parcela'):'Continuar';
+}
+function wzChip(elId,text){const el=document.getElementById(elId);el.value=(el.value?el.value.replace(/\s*$/,'')+', ':'')+text;el.focus();}
+function wzPrev(){if(wzStep===0)return;wzReadCurrent();wzStep--;wzRender();}
+async function wzNext(){
+  wzReadCurrent();
+  if(wzStep===0&&!(wzData.name||'').trim()){toast('Ponle un nombre a la parcela');return;}
+  if(wzStep<WZ_SLIDES.length-1){
+    const slide=document.getElementById('wz-slide');slide.style.animation='slideOut .25s ease both';
+    setTimeout(()=>{wzStep++;wzRender();},230);return;
+  }
+  await wzSubmit();
+}
+async function wzSubmit(){
+  let coords;try{coords=JSON.parse(wzData.geo||DEFAULT_GEO);}catch{toast('Geometría inválida');wzStep=1;wzRender();return;}
+  const body={name:wzData.name.trim(),crop_type:wzData.crop_type||null,
+    planting_date:wzData.planting_date||null,expected_harvest:wzData.expected_harvest||null,
+    context:{riego:wzData.riego||'',fertilizacion:wzData.fertilizacion||'',riesgos:wzData.riesgos||''}};
+  const btn=document.getElementById('wz-next');btn.disabled=true;btn.textContent='Guardando…';
+  try{
+    let res;
+    if(wzMode==='edit'){res=await api(`/fields/${wzEditId}`,{method:'PATCH',body:JSON.stringify(body)});}
+    else{body.geometry={type:'Polygon',coordinates:coords};res=await api('/fields',{method:'POST',body:JSON.stringify(body)});}
+    const d=await res.json();
+    if(!res.ok){toast('Error: '+(typeof d.detail==='string'?d.detail:'no se pudo guardar'));return;}
+    await loadFields();
+    currentField=allFields.find(f=>f.id===(wzMode==='edit'?wzEditId:d.id))||allFields[0];
+    renderSidebar();
+    wzCancel();toast(wzMode==='edit'?'Perfil actualizado':`Parcela "${d.name}" creada`);
+    setRole('analisis');
+  }catch(e){toast('Error: '+e.message);}
+  finally{btn.disabled=false;}
+}
+
+// ── MODAL nuevo campo (legacy, reemplazado por wizard) ──
+function openModal(m){document.getElementById('modal-'+m).classList.add('on');}
+function closeModal(m){document.getElementById('modal-'+m).classList.remove('on');}
+async function createField(){
+  const e=document.getElementById('nf-err');e.textContent='';
+  const name=document.getElementById('nf-name').value.trim();if(!name){e.textContent='Nombre obligatorio.';return;}
+  let coords;try{coords=JSON.parse(document.getElementById('nf-geo').value.trim()||'[[[-64.18,-31.42],[-64.17,-31.42],[-64.17,-31.43],[-64.18,-31.43],[-64.18,-31.42]]]');}catch{e.textContent='GeoJSON inválido.';return;}
+  const b=document.getElementById('nf-submit');b.disabled=true;b.innerHTML='<span class="spin"></span>Creando…';
+  try{
+    const r=await api('/fields',{method:'POST',body:JSON.stringify({name,crop_type:document.getElementById('nf-crop').value||null,area_ha:parseFloat(document.getElementById('nf-area').value)||5,geometry:{type:'Polygon',coordinates:coords}})});
+    const d=await r.json();if(!r.ok){e.textContent=typeof d.detail==='string'?d.detail:JSON.stringify(d.detail);return;}
+    allFields.unshift(d);currentField=d;closeModal('field');renderSidebar();setRole(currentRole);toast(`Campo "${d.name}" creado`);
+  }catch(err){e.textContent='Error: '+err.message;}finally{b.disabled=false;b.textContent='Crear';}
+}
+
+// ── Cookies / Analytics (opt-in) ──
+function initPostHog(){
+  const c=window.AGV_CONFIG||{};
+  if(!c.posthog_key||window._phLoaded)return;
+  window._phLoaded=true;
+  const s=document.createElement('script');
+  s.src='https://unpkg.com/posthog-js@1/dist/array.js';
+  s.onload=()=>{try{posthog.init(c.posthog_key,{api_host:c.posthog_host||'https://us.i.posthog.com',persistence:'localStorage'});}catch(e){}};
+  document.head.appendChild(s);
+}
+function acceptCookies(){localStorage.setItem('agv_cookies','accepted');document.getElementById('cookie-banner').style.display='none';initPostHog();}
+function rejectCookies(){localStorage.setItem('agv_cookies','rejected');document.getElementById('cookie-banner').style.display='none';}
+function initCookies(){
+  const v=localStorage.getItem('agv_cookies');
+  if(v==='accepted')initPostHog();
+  else if(v!=='rejected')document.getElementById('cookie-banner').style.display='flex';
+}
+
+(async()=>{
+  initCookies();
+  if(token){try{await initApp();}catch{token='';localStorage.removeItem('agv');}}
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+# Render Blueprint — STAGING (rama `develop`)
+#
+# Cómo usarlo (cuando quieras un entorno de pruebas en la nube):
+#   1. En tu rama `develop`, renombra este archivo a `render.yaml` (Render solo lee
+#      `render.yaml` en la raíz de la rama conectada), o crea un repo/rama dedicada.
+#   2. Render Dashboard → New → Blueprint → conecta el repo apuntando a `develop`.
+#   3. Es un stack independiente (nombres `-staging`, su propia BD y Redis), por eso
+#      no choca con producción.
+#
+# Nota: en free tier dos stacks consumen el doble de recursos; levántalo solo cuando
+# lo necesites. Producción vive en `render.yaml` (rama `main`).
+
+databases:
+  - name: agrovision-db-staging
+    databaseName: agrolytics
+    plan: free
+    postgresMajorVersion: "15"
+
+services:
+  - type: keyvalue
+    name: agrovision-redis-staging
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
+
+  - type: web
+    name: agrovision-api-staging
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    branch: develop
+    plan: free
+    healthCheckPath: /health
+    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+    disk:
+      name: agrovision-data-staging
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: RUN_MIGRATIONS
+        value: "true"
+      - key: APP_ENV
+        value: staging          # not "production" → relaxed checks; docs stay on
+      - key: DOCS_ENABLED
+        value: "true"           # Swagger visible in staging for testing
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL_SYNC
+        fromDatabase:
+          name: agrovision-db-staging
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: agrovision-redis-staging
+          property: connectionString
+      - key: CORS_ORIGINS
+        value: https://agrovision-api-staging.onrender.com
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: POSTHOG_KEY
+        sync: false
+
+  - type: worker
+    name: agrovision-worker-staging
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    branch: develop
+    plan: starter
+    dockerCommand: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=1
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: JWT_SECRET
+        fromService:
+          type: web
+          name: agrovision-api-staging
+          envVarKey: JWT_SECRET
+      - key: DATABASE_URL_SYNC
+        fromDatabase:
+          name: agrovision-db-staging
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: agrovision-redis-staging
+          property: connectionString

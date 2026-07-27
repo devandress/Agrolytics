@@ -1,0 +1,37 @@
+# Production override for docker-compose.
+#
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Differences vs. the dev compose:
+#   - No source bind mount (`.:/app`) — the image is the source of truth.
+#   - DB/Redis ports are NOT published to the host (internal network only).
+#   - Passwords come from the environment (set DB_PASSWORD), never hardcoded.
+#   - APP_ENV=production so the fail-fast security checks apply.
+
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in the environment}
+    ports: []          # do not expose Postgres to the host
+
+  redis:
+    ports: []          # do not expose Redis to the host
+
+  api:
+    environment:
+      APP_ENV: production
+      DOCS_ENABLED: "false"
+    volumes:
+      - cog_data:/app/data   # keep the data volume, drop the source bind mount
+
+  celery-worker:
+    environment:
+      APP_ENV: production
+    volumes:
+      - cog_data:/app/data
+
+  celery-beat:
+    environment:
+      APP_ENV: production
+    volumes: []

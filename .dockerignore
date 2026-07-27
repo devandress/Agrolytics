@@ -1,0 +1,37 @@
+# Secrets — never bake into the image (the Dockerfile does `COPY . .`)
+.env
+.env.*
+!.env.example
+
+# Version control / CI
+.git
+.gitignore
+.github
+
+# Python caches & build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Runtime / generated data (mounted as volumes in production)
+data/
+logs/
+celerybeat-schedule
+*.sqlite3
+
+# Local tooling
+.claude/
+.vscode/
+.idea/
+*.md
+!README.md
