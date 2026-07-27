@@ -15,14 +15,19 @@ from __future__ import annotations
 # relative-humidity threshold (%) above which infection pressure rises. ``kind``
 # distinguishes fungal (needs leaf wetness) from insect (degree-day driven).
 CROP_THREAT: dict[str, dict] = {
-    "Lechuga":   {"pest": "Mildiú velloso (downy mildew)", "t": (10, 20), "rh": 85, "kind": "fungal"},
-    "Espinaca":  {"pest": "Mildiú (downy mildew)",          "t": (8, 18),  "rh": 85, "kind": "fungal"},
+    # rh/t for downy mildew, Botrytis and oídio aligned with the sourced values in
+    # pest_catalog.py (UC IPM / Gubler-Thomas) — see that file for citations.
+    # Apio/Alcachofa entries are NOT re-sourced yet (kept as prior estimates);
+    # celery's "Tizón tardío" naming likely refers to Septoria apiicola ("celery
+    # late blight"), not potato late blight — worth confirming before citing it.
+    "Lechuga":   {"pest": "Mildiú velloso (downy mildew)", "t": (10, 20), "rh": 90, "kind": "fungal"},
+    "Espinaca":  {"pest": "Mildiú (downy mildew)",          "t": (8, 18),  "rh": 90, "kind": "fungal"},
     "Brócoli":   {"pest": "Polilla dorso de diamante (DBM)", "t": (20, 30), "rh": 55, "kind": "insect"},
     "Coliflor":  {"pest": "Polilla dorso de diamante (DBM)", "t": (20, 30), "rh": 55, "kind": "insect"},
-    "Fresa":     {"pest": "Botrytis (moho gris)",            "t": (15, 25), "rh": 85, "kind": "fungal"},
+    "Fresa":     {"pest": "Botrytis (moho gris)",            "t": (18, 24), "rh": 90, "kind": "fungal"},
     "Apio":      {"pest": "Tizón tardío (late blight)",      "t": (15, 22), "rh": 88, "kind": "fungal"},
     "Alcachofa": {"pest": "Pulgón / Botrytis",               "t": (15, 25), "rh": 80, "kind": "fungal"},
-    "Vid":       {"pest": "Oídio (Erysiphe necator)",        "t": (18, 27), "rh": 70, "kind": "fungal"},
+    "Vid":       {"pest": "Oídio (Erysiphe necator)",        "t": (21, 29), "rh": 70, "kind": "fungal"},
 }
 _DEFAULT = {"pest": "Plagas/enfermedades generales", "t": (12, 26), "rh": 80, "kind": "fungal"}
 
