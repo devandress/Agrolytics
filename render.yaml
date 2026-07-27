@@ -1,28 +1,29 @@
-# Render Blueprint for AgroVision — https://render.com/docs/blueprint-spec
+# Render Blueprint for AgroVision — 100% FREE tier ($0/mes)
+# https://render.com/docs/blueprint-spec
 #
-# Deploys the full stack: FastAPI web service, Celery worker, Celery beat,
-# managed PostgreSQL (PostGIS enabled by migration 001), and a Key Value (Redis).
+# Arquitectura gratis:
+#   - Web (FastAPI):  Render web service plan free (duerme tras ~15 min sin tráfico;
+#                     el primer request lo despierta en ~30-60 s).
+#   - Postgres:       Supabase free (NO expira, a diferencia del Postgres free de
+#                     Render que muere a los 30 días). Se pega como env var.
+#   - Redis:          Render Key Value plan free (25 MB) — JWT blocklist / rate limit.
+#   - Celery worker/beat: NO desplegados (en Render los workers son de pago).
+#                     La ingesta satelital se dispara manualmente vía API o local.
+#   - Disco persistente: NO (requiere plan pago). Los rasters COG viven en el
+#                     filesystem efímero (/app/data se pierde en cada deploy/restart).
 #
-# Quick start:
-#   1. Push this repo to GitHub.
-#   2. Render Dashboard → New → Blueprint → select this repo.
-#   3. Render reads render.yaml and provisions everything below.
+# Pasos:
+#   1. Crea proyecto en https://supabase.com (gratis). Copia la connection string
+#      "Session pooler" (Settings → Database → Connect).
+#   2. Render Dashboard → New → Blueprint → selecciona este repo.
+#   3. Cuando pida DATABASE_URL_SYNC, pega la URL de Supabase
+#      (postgresql://postgres.xxxx:PASSWORD@aws-0-xx.pooler.supabase.com:5432/postgres).
+#   4. Deploy. Las migraciones corren solas en el boot (RUN_MIGRATIONS=true).
 #
-# IMPORTANT free-tier caveats (verify against current Render docs/pricing):
-#   - Free PostgreSQL instances expire after ~30 days; use a paid plan for real use.
-#   - Free web services sleep when idle; background workers/beat may require a paid plan.
-#   - Persistent disks attach to ONE service only — so COG rasters written by the
-#     worker are NOT visible to the web service. For multi-service raster serving,
-#     switch DATA_DIR to S3-compatible object storage (see S3_BUCKET in config).
-
-databases:
-  - name: agrovision-db
-    databaseName: agrolytics
-    plan: free
-    postgresMajorVersion: "15"
+# Para escalar a la versión paga (workers Celery + disco): usar render.paid.yaml.
 
 services:
-  # ── Redis / Key Value (Celery broker + JWT blocklist) ────────────────────────
+  # ── Redis / Key Value (free, 25 MB) ─────────────────────────────────────────
   - type: keyvalue
     name: agrovision-redis
     plan: free
@@ -34,14 +35,10 @@ services:
     name: agrovision-api
     runtime: docker
     dockerfilePath: ./Dockerfile
-    branch: main                # production tracks main (develop → render.staging.yaml)
+    branch: main
     plan: free
     healthCheckPath: /health
     dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
-    disk:
-      name: agrovision-data
-      mountPath: /app/data
-      sizeGB: 1
     envVars:
       - key: RUN_MIGRATIONS          # run alembic upgrade head on boot (entrypoint.sh)
         value: "true"
@@ -51,19 +48,17 @@ services:
         value: "false"
       - key: JWT_SECRET              # auto-generated strong secret
         generateValue: true
-      - key: DATABASE_URL_SYNC       # async URL is derived from this in config.py
-        fromDatabase:
-          name: agrovision-db
-          property: connectionString
+      - key: DATABASE_URL_SYNC       # Supabase pooler URL — pegar en el dashboard.
+        sync: false                  # (async URL se deriva sola en config.py)
       - key: REDIS_URL
         fromService:
           type: keyvalue
           name: agrovision-redis
           property: connectionString
-      - key: CORS_ORIGINS            # Render's free subdomain (matches this service
-                                     # name). Confirm/adjust after first deploy if
-                                     # Render appended a random suffix; add more
-                                     # comma-separated origins for a separate frontend.
+      - key: DATA_DIR                # efímero en plan free (sin disco persistente)
+        value: /app/data
+      - key: CORS_ORIGINS            # ajustar tras el primer deploy si Render
+                                     # añade sufijo aleatorio al subdominio.
         value: https://agrovision-api.onrender.com
       - key: DEEPSEEK_API_KEY        # set in dashboard (secret)
         sync: false
@@ -73,57 +68,3 @@ services:
         sync: false
       - key: POSTHOG_HOST
         value: https://us.i.posthog.com
-
-  # ── Celery worker (ingestion + insights) ─────────────────────────────────────
-  - type: worker
-    name: agrovision-worker
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    branch: main
-    plan: starter
-    dockerCommand: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
-    envVars:
-      - key: APP_ENV
-        value: production
-      - key: SENTRY_DSN
-        sync: false
-      - key: JWT_SECRET
-        fromService:
-          type: web
-          name: agrovision-api
-          envVarKey: JWT_SECRET
-      - key: DATABASE_URL_SYNC
-        fromDatabase:
-          name: agrovision-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: agrovision-redis
-          property: connectionString
-
-  # ── Celery beat (periodic schedule) ──────────────────────────────────────────
-  - type: worker
-    name: agrovision-beat
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    branch: main
-    plan: starter
-    dockerCommand: celery -A app.tasks.celery_app beat --loglevel=info
-    envVars:
-      - key: APP_ENV
-        value: production
-      - key: JWT_SECRET
-        fromService:
-          type: web
-          name: agrovision-api
-          envVarKey: JWT_SECRET
-      - key: DATABASE_URL_SYNC
-        fromDatabase:
-          name: agrovision-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: agrovision-redis
-          property: connectionString
