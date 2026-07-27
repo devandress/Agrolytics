@@ -29,7 +29,7 @@ from app.models.index import Index
 from app.services.task_generator import _has_open_task, generate_pest_pins_for_field, generate_tasks_for_field
 
 _DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
-_MODEL = "deepseek-chat"
+_MODEL = "deepseek-v4-flash"
 _VALID_TYPES = {"riego", "fertilizacion", "inspeccion", "otro"}
 
 _SYSTEM = """Eres un agrónomo experto en vegetales costeros y en viticultura (uva de vino). Recibes

@@ -11,7 +11,7 @@ from app.core.config import settings
 router = APIRouter()
 
 _DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
-_MODEL = "deepseek-chat"
+_MODEL = "deepseek-v4-flash"
 
 _SYSTEM_PROMPT = """Eres AgroBot, un asistente agrónomo experto integrado en la plataforma Agrolytics.
 Tu rol es ayudar a agricultores y agrónomos con:
