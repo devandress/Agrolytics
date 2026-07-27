@@ -465,24 +465,6 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 
 <div id="toast"></div>
 
-<!-- MODAL nuevo campo -->
-<div class="modal-wrap" id="modal-field" onclick="if(event.target===this)closeModal('field')">
-  <div class="modal">
-    <h3>Nuevo campo</h3>
-    <label>Nombre *</label><input id="nf-name" placeholder="Parcela Norte"/>
-    <label>Cultivo</label>
-    <select id="nf-crop"><option value="">— Sin especificar —</option>
-      <option>Lechuga</option><option>Espinaca</option><option>Brócoli</option><option>Coliflor</option>
-      <option>Fresa</option><option>Apio</option><option>Alcachofa</option><option>Vid</option><option>corn</option><option>wheat</option></select>
-    <label>Área (ha)</label><input id="nf-area" type="number" value="5" step="0.1" min="0.01"/>
-    <label>Coordenadas GeoJSON</label>
-    <textarea id="nf-geo" placeholder='[[ [-64.18,-31.42],[-64.17,-31.42],[-64.17,-31.43],[-64.18,-31.43],[-64.18,-31.42] ]]'></textarea>
-    <div class="modal-btns"><button class="btn btn-cancel" onclick="closeModal('field')">Cancelar</button>
-      <button class="btn btn-primary" id="nf-submit" onclick="createField()">Crear</button></div>
-    <div class="modal-err" id="nf-err"></div>
-  </div>
-</div>
-
 <!-- MODAL foto -->
 <div class="modal-wrap" id="modal-photo" onclick="if(event.target===this)closeModal('photo')">
   <div class="modal">
@@ -747,19 +729,22 @@ async function saveMapTask(){
 }
 
 let tasksByField={};
+let _taskListCache=[];
 async function loadTasksAndMap(){
   const el=document.getElementById('tasks-list');
   let tasks=[];
   try{tasks=await(await api('/tasks?status=pendiente')).json();}catch{el.innerHTML='<div class="empty">Error al cargar tareas.</div>';return;}
+  _taskListCache=tasks;
 
   // render list
   if(!tasks.length){el.innerHTML='<div class="card"><div class="empty">No hay tareas pendientes.<br>Toca "Actualizar tareas".</div></div>';}
   else{
-    el.innerHTML=tasks.map(t=>`<div class="task prio-${t.priority}" id="task-${t.id}">
+    el.innerHTML=tasks.map((t,i)=>`<div class="task prio-${t.priority}" id="task-${t.id}">
       <span class="cat cat-${t.task_type}">${CAT[t.task_type]||'Tarea'}</span>
       <div class="task-body"><div class="task-title">${esc(t.field_name||'')}</div><div class="task-detail">${esc(t.detail||'')}</div></div>
       ${t.recommended_value?`<div class="task-qty">${esc(t.recommended_value)}</div>`:''}
       <div class="task-btns">
+        <button class="tbtn tbtn-photo" title="Enviar por WhatsApp" onclick="waSendTask(${i})">📲</button>
         <button class="tbtn tbtn-photo" title="Subir foto" onclick="openPhoto('${t.field_id}','${t.id}','${esc(t.title)}')">Foto</button>
         <button class="tbtn tbtn-done" title="Marcar hecho" onclick="doneTask('${t.id}')">✓</button>
       </div></div>`).join('');
@@ -777,15 +762,31 @@ async function loadTasksAndMap(){
   for(const f of allFields){const ctr=centroid(f.geometry);ctrByField[f.id]=ctr;
     try{window._fieldOutlines.push(L.geoJSON(f.geometry,{style:{color:'#ffca28',weight:2.5,opacity:.95,fill:true,fillColor:'#ffca28',fillOpacity:.06,lineJoin:'round'}}).addTo(leafMap));}catch{}}
   const pts=[];
+  // Tasks without an explicit lat/lon all fall back to the same field centroid —
+  // without spreading them, 2+ pins land on the exact same pixel and only the
+  // topmost is ever clickable. Fan them out in a small ring around the centroid.
+  const fallbackGroups={};
+  tasks.forEach(t=>{if(!(t.lat&&t.lon))(fallbackGroups[t.field_id]=fallbackGroups[t.field_id]||[]).push(t);});
+  const ringIndex={};
   tasks.forEach((t,i)=>{
-    const pt=(t.lat&&t.lon)?[t.lat,t.lon]:ctrByField[t.field_id];
+    let pt=(t.lat&&t.lon)?[t.lat,t.lon]:ctrByField[t.field_id];
     if(!pt)return;
+    if(!(t.lat&&t.lon)&&fallbackGroups[t.field_id].length>1){
+      const idx=ringIndex[t.field_id]=(ringIndex[t.field_id]||0)+1;
+      const n=fallbackGroups[t.field_id].length;
+      const angle=2*Math.PI*(idx-1)/n, rMeters=14+Math.floor((idx-1)/8)*12;
+      const dLat=(rMeters/111320)*Math.cos(angle);
+      const dLon=(rMeters/(111320*Math.cos(pt[0]*Math.PI/180)))*Math.sin(angle);
+      pt=[pt[0]+dLat,pt[1]+dLon];
+    }
     const col=prioColor(t.priority);
     const icon=L.divIcon({className:'',html:`<div class="pin-marker" style="background:${col}"></div>`,iconSize:[22,22],iconAnchor:[11,20]});
     const m=L.marker(pt,{icon}).addTo(leafMap);
     const gmaps=`https://www.google.com/maps/dir/?api=1&destination=${pt[0]},${pt[1]}`;
     m.bindPopup(`<b style="font-size:.92rem">${esc(t.field_name||'')}</b><br><b>${CAT[t.task_type]||'Tarea'}</b> — ${esc(t.detail||t.title)} ${t.recommended_value?'<b>('+esc(t.recommended_value)+')</b>':''}<br>
-      <a class="popup-go" href="${gmaps}" target="_blank">Cómo llegar</a> <button onclick="doneTask('${t.id}')" style="border:none;background:#2e7d32;color:#fff;border-radius:6px;padding:.3rem .6rem;cursor:pointer;margin-top:.3rem">✓ Hecho</button>`);
+      <a class="popup-go" href="${gmaps}" target="_blank">Cómo llegar</a>
+      <button onclick="waSendTask(${i})" style="border:none;background:#25D366;color:#fff;border-radius:6px;padding:.3rem .6rem;cursor:pointer;margin-top:.3rem;margin-left:.3rem">📲 WhatsApp</button>
+      <button onclick="doneTask('${t.id}')" style="border:none;background:#2e7d32;color:#fff;border-radius:6px;padding:.3rem .6rem;cursor:pointer;margin-top:.3rem">✓ Hecho</button>`);
     markers[t.id]=m;pts.push(pt);
   });
   if(pts.length)leafMap.fitBounds(pts,{padding:[40,40],maxZoom:14});
@@ -796,6 +797,11 @@ let _waMsgs={},_waSeq=0;
 function waPhone(){return (localStorage.getItem('agv_wa_phone')||'').replace(/[^0-9]/g,'');}
 function waSetPhone(v){localStorage.setItem('agv_wa_phone',v||'');}
 function waSend(text){window.open(`https://wa.me/${waPhone()}?text=${encodeURIComponent(text)}`,'_blank');}
+function waSendTask(i){
+  const t=_taskListCache[i];if(!t)return;
+  const line=`${CAT[t.task_type]||'Tarea'}: ${t.detail||t.title}${t.recommended_value?` (${t.recommended_value})`:''}`;
+  waSend(waMsg(t.field_name||'Parcela',[line]));
+}
 function waMsg(field,lines){
   return `🚨 *Agrolytics — Alerta*\n📍 ${field}\n`+lines.map(l=>'• '+l).join('\n')+`\n\n_${new Date().toLocaleString('es-MX')}_`;
 }
@@ -862,9 +868,23 @@ function quickGuideHtml(){
     <button class="qx" title="Ocultar" onclick="localStorage.setItem('agv_guide','off');this.parentElement.remove()">✕</button></div>`;
 }
 
+// Esri's free World_Imagery layer has two failure modes at deep zoom: bursts of
+// tile requests get 503'd (throttling — retry recovers it), and many rural areas
+// have no real imagery past z18-19, so Esri serves a "Map data not yet available"
+// placeholder tile with a normal 200 status (can't be detected as an error, only
+// avoided by not asking for a zoom level that area doesn't actually have).
+function esriTileLayer(){
+  const layer=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    {maxZoom:20,maxNativeZoom:18,attribution:'Esri'});
+  layer.on('tileerror',e=>{
+    const tile=e.tile;if(!tile||tile._retried)return;tile._retried=true;
+    setTimeout(()=>{tile.src=e.tile.src.split('?')[0]+'?retry='+Date.now();},1200);
+  });
+  return layer;
+}
 function initMap(){
   leafMap=L.map('map',{attributionControl:false}).setView([20,-100],4);
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:21,maxNativeZoom:19,attribution:'Esri'}).addTo(leafMap);
+  esriTileLayer().addTo(leafMap);
 }
 async function genTasks(){toast('Analizando campos…');try{const d=await(await api('/tasks/generate',{method:'POST'})).json();toast(d.message);loadTasksAndMap();}catch{toast('Error al generar tareas');}}
 async function doneTask(id){try{await api(`/tasks/${id}/complete`,{method:'POST'});toast('Tarea completada');loadTasksAndMap();}catch{toast('Error');}}
@@ -1654,7 +1674,7 @@ async function anRefreshData(){
 function initAnMap(){
   if(leafMap){try{leafMap.remove();}catch{}leafMap=null;}
   leafMap=L.map('map',{attributionControl:false}).setView([20,-100],4);
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:21,maxNativeZoom:19,attribution:'Esri'}).addTo(leafMap);
+  esriTileLayer().addTo(leafMap);
   leafMap.on('mousemove',anHover);
   leafMap.on('mouseout',()=>{const t=document.getElementById('px-tip');if(t)t.style.display='none';});
   // Contorno de la parcela (blanco para verse sobre la imagen satelital) + zoom al recuadro.
@@ -1843,10 +1863,17 @@ function wzInitMap(){
     wzDrawPts=init.slice(0,-1);
   }catch{}
   wzMap=L.map('wz-map',{attributionControl:false});
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:21,maxNativeZoom:19,attribution:'Esri'}).addTo(wzMap);
+  esriTileLayer().addTo(wzMap);
   wzMap.setView(wzDrawPts[0]||[20,-100],wzDrawPts.length?14:4);
   wzMap.on('click',e=>{wzDrawPts.push([e.latlng.lat,e.latlng.lng]);wzRedraw();});
   wzRedraw();setTimeout(()=>wzMap.invalidateSize(),150);
+  // New field, nothing drawn yet: jump to the user's real location instead of
+  // making them search/pan from a whole-country default view.
+  if(!wzDrawPts.length&&navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(
+      pos=>{if(wzMap&&!wzDrawPts.length)wzMap.setView([pos.coords.latitude,pos.coords.longitude],16);},
+      ()=>{},{timeout:5000,maximumAge:600000});
+  }
 }
 // Place search (Nominatim/OSM) — helps find San Quintín, Ensenada, etc. and fly there.
 async function wzGeoSearch(){
@@ -2006,20 +2033,7 @@ async function wzSubmit(){
   finally{btn.disabled=false;}
 }
 
-// ── MODAL nuevo campo (legacy, reemplazado por wizard) ──
-function openModal(m){document.getElementById('modal-'+m).classList.add('on');}
 function closeModal(m){document.getElementById('modal-'+m).classList.remove('on');}
-async function createField(){
-  const e=document.getElementById('nf-err');e.textContent='';
-  const name=document.getElementById('nf-name').value.trim();if(!name){e.textContent='Nombre obligatorio.';return;}
-  let coords;try{coords=JSON.parse(document.getElementById('nf-geo').value.trim()||'[[[-64.18,-31.42],[-64.17,-31.42],[-64.17,-31.43],[-64.18,-31.43],[-64.18,-31.42]]]');}catch{e.textContent='GeoJSON inválido.';return;}
-  const b=document.getElementById('nf-submit');b.disabled=true;b.innerHTML='<span class="spin"></span>Creando…';
-  try{
-    const r=await api('/fields',{method:'POST',body:JSON.stringify({name,crop_type:document.getElementById('nf-crop').value||null,area_ha:parseFloat(document.getElementById('nf-area').value)||5,geometry:{type:'Polygon',coordinates:coords}})});
-    const d=await r.json();if(!r.ok){e.textContent=typeof d.detail==='string'?d.detail:JSON.stringify(d.detail);return;}
-    allFields.unshift(d);currentField=d;closeModal('field');renderSidebar();setRole(currentRole);toast(`Campo "${d.name}" creado`);
-  }catch(err){e.textContent='Error: '+err.message;}finally{b.disabled=false;b.textContent='Crear';}
-}
 
 // ── Cookies / Analytics (opt-in) ──
 function initPostHog(){
