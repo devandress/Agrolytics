@@ -383,15 +383,31 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 </head>
 <body>
 
-<!-- LOGIN -->
+<!-- LOGIN / REGISTRO -->
 <div id="login-screen">
   <div class="login-card">
     <div class="brand"><svg class="leaf" viewBox="0 0 24 24" fill="#2e7d32"><path d="M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66.95-2.3c.48.17.98.3 1.34.3C19 20 22 3 22 3c-1 2-8 2.25-13 3.25S2 11.5 2 13.5s1.75 3.75 1.75 3.75C7 8 17 8 17 8z"/></svg>Agrolytics</div>
-    <p>Inteligencia agrícola satelital</p>
-    <input type="email" id="l-email" value="123@gmail.com"/>
-    <input type="password" id="l-pass" value="12345678"/>
-    <button class="login-btn" id="login-btn" onclick="doLogin()">Iniciar sesión</button>
-    <div class="login-err" id="login-err"></div>
+    <p id="auth-sub">Inteligencia agrícola satelital</p>
+
+    <div id="login-form">
+      <input type="email" id="l-email" placeholder="tu@correo.com" autocomplete="username"/>
+      <input type="password" id="l-pass" placeholder="Contraseña" autocomplete="current-password"/>
+      <button class="login-btn" id="login-btn" onclick="doLogin()">Iniciar sesión</button>
+      <div class="login-err" id="login-err"></div>
+      <p style="text-align:center;font-size:.82rem;margin-top:.4rem">¿No tenés cuenta?
+        <a href="#" onclick="toggleAuthMode('register');return false" style="color:var(--green);font-weight:700">Registrate</a></p>
+    </div>
+
+    <div id="register-form" style="display:none">
+      <input type="email" id="r-email" placeholder="tu@correo.com" autocomplete="username"/>
+      <input type="password" id="r-pass" placeholder="Contraseña (8+ caracteres, con letras)" autocomplete="new-password"/>
+      <input type="password" id="r-pass2" placeholder="Repetí la contraseña" autocomplete="new-password"/>
+      <button class="login-btn" id="register-btn" onclick="doRegister()">Crear cuenta</button>
+      <div class="login-err" id="register-err"></div>
+      <p style="text-align:center;font-size:.82rem;margin-top:.4rem">¿Ya tenés cuenta?
+        <a href="#" onclick="toggleAuthMode('login');return false" style="color:var(--green);font-weight:700">Iniciá sesión</a></p>
+    </div>
+
     <div style="text-align:center;font-size:.72rem;color:var(--muted);margin-top:.3rem">
       <a href="/privacy" target="_blank" style="color:var(--muted)">Privacidad</a> ·
       <a href="/terms" target="_blank" style="color:var(--muted)">Términos</a>
@@ -544,8 +560,36 @@ async function doLogin(){
     token=d.access_token;localStorage.setItem('agv',token);await initApp();
   }catch{e.textContent='No se pudo conectar.';}finally{b.disabled=false;b.textContent='Iniciar sesión';}
 }
-document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!document.getElementById('app').classList.contains('on'))doLogin();});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!document.getElementById('app').classList.contains('on')){
+  if(document.getElementById('register-form').style.display!=='none')doRegister();else doLogin();
+}});
 async function doLogout(){try{await api('/auth/logout',{method:'POST'});}catch{}token='';localStorage.removeItem('agv');location.reload();}
+
+function toggleAuthMode(mode){
+  const isReg=mode==='register';
+  document.getElementById('login-form').style.display=isReg?'none':'block';
+  document.getElementById('register-form').style.display=isReg?'block':'none';
+  document.getElementById('auth-sub').textContent=isReg?'Creá tu cuenta gratis':'Inteligencia agrícola satelital';
+  document.getElementById('login-err').textContent='';document.getElementById('register-err').textContent='';
+}
+async function doRegister(){
+  const b=document.getElementById('register-btn'),e=document.getElementById('register-err');
+  const email=document.getElementById('r-email').value.trim();
+  const pass=document.getElementById('r-pass').value,pass2=document.getElementById('r-pass2').value;
+  e.textContent='';
+  if(!email||!pass){e.textContent='Completá correo y contraseña.';return;}
+  if(pass!==pass2){e.textContent='Las contraseñas no coinciden.';return;}
+  b.disabled=true;b.innerHTML='<span class="spin"></span>Creando cuenta…';
+  try{
+    const r=await fetch(`${API}/auth/register`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})});
+    const d=await r.json();
+    if(!r.ok){e.textContent=(d.detail&&(d.detail.msg||d.detail))||'No se pudo crear la cuenta.';return;}
+    const lr=await fetch(`${API}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})});
+    const ld=await lr.json();
+    if(!lr.ok){toggleAuthMode('login');document.getElementById('login-err').textContent='Cuenta creada. Iniciá sesión.';return;}
+    token=ld.access_token;localStorage.setItem('agv',token);await initApp();
+  }catch{e.textContent='No se pudo conectar.';}finally{b.disabled=false;b.textContent='Crear cuenta';}
+}
 
 async function initApp(){
   const r=await api('/auth/me');if(!r.ok){token='';localStorage.removeItem('agv');return;}
