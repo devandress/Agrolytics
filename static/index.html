@@ -1111,22 +1111,50 @@ function showTable(which, btn){
   ({plagas:tablePlagas,fenologia:tableFenologia,indices:tableIndices,clima:tableClima}[which])();
 }
 
+const CONF_LABEL={alta:'confianza alta — datos medidos',media:'confianza media — parte pronóstico',baja:'confianza baja — poca data real'};
+const TREND_LBL=['Hoy','+1d','+2d','+3d'];
+const LEVEL_COL={alto:'#c62828',medio:'#b8860b',bajo:'#2e7d32'};
+let _lastPestData=[];
+function trendStripHtml(trend){
+  if(!trend||!trend.length)return'';
+  return `<div style="display:flex;gap:.3rem;margin-top:.45rem">${trend.map((t,i)=>
+    `<div style="flex:1;text-align:center">
+      <div style="height:7px;border-radius:4px;background:${LEVEL_COL[t.level]};opacity:${t.confidence==='alta'?1:.45}"></div>
+      <div style="font-size:.62rem;color:var(--muted);margin-top:.2rem">${TREND_LBL[i]||'+'+i+'d'}</div>
+    </div>`).join('')}</div>`;
+}
 async function tablePlagas(){
   const el=document.getElementById('tables-body');el.innerHTML='<div class="empty">Analizando plagas…</div>';
   try{
     const d=await(await api(`/fields/${currentField.id}/pests`)).json();
+    _lastPestData=d.pests||[];
     const wx=d.weather||{};
-    const rows=d.pests.map(p=>`<div class="pest-row ${p.level}">
+    const rows=d.pests.map((p,i)=>`<div class="pest-row ${p.level}">
       <div class="pest-head"><span class="pest-name">${esc(p.name)} <span class="pest-kind">${p.kind==='fungal'?'hongo':'insecto'}</span></span>
         <span class="pill ${statusPill(p.level)}">riesgo ${p.level} · ${p.score}</span></div>
+      <div style="font-size:.68rem;color:var(--muted);margin-top:.15rem">${esc(CONF_LABEL[p.confidence]||'')}</div>
       <div class="pest-drivers">${p.drivers.map(esc).join(' · ')}</div>
-      <div class="pest-scout">${esc(p.scout||'')}</div></div>`).join('');
+      ${trendStripHtml(p.trend)}
+      <div style="font-size:.82rem;font-weight:600;margin-top:.5rem;color:var(--text2)">${esc(p.accion||p.recommendation||'')}</div>
+      <button class="add-btn" style="margin-top:.5rem;padding:.3rem .7rem;font-size:.74rem" onclick="confirmPestInField(${i})">📷 Confirmar en campo</button>
+      </div>`).join('');
     el.innerHTML=`
       <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem">Clima: ${wx.temp!=null?wx.temp+'°C':'—'} · ${wx.humidity!=null?wx.humidity+'% HR':''} · humedad foliar ${wx.wet_hours??'—'} h</div>
+      <div style="font-size:.72rem;color:var(--muted);background:var(--card2);border-radius:8px;padding:.5rem .7rem;margin-bottom:.65rem">El satélite mide condiciones favorables al patógeno, no la plaga en sí. Cuando confirmás con foto en campo, esa observación queda registrada junto al pronóstico — así el catálogo de tu zona se ajusta con el tiempo.</div>
       ${rows||'<div class="empty">Sin plagas activas.</div>'}
       <button class="add-btn" style="margin-top:.6rem" onclick="managePests()">Gestionar plagas de mi zona</button>
       <div id="pest-manage"></div>`;
   }catch{el.innerHTML='<div class="empty">Error al cargar plagas.</div>';}
+}
+async function confirmPestInField(i){
+  const p=_lastPestData[i];if(!p||!currentField)return;
+  const prio=p.level==='alto'?1:p.level==='medio'?3:4;
+  try{
+    const task=await(await api(`/fields/${currentField.id}/tasks`,{method:'POST',body:JSON.stringify({
+      task_type:'inspeccion',title:`Confirmar ${p.name} en campo`,
+      detail:p.accion||p.recommendation||'',priority:prio})})).json();
+    openPhoto(currentField.id,task.id,`Confirmar ${p.name}`);
+  }catch{toast('No se pudo crear la tarea de confirmación');}
 }
 async function managePests(){
   const box=document.getElementById('pest-manage');
