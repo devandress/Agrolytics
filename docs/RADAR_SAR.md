@@ -1,8 +1,8 @@
-# Open-Source Radar (SAR) Satellites for AgroVision
+# Open-Source Radar (SAR) Satellites for Agrolytics
 
 ## Why radar?
 
-AgroVision's primary feed is **Sentinel-2 optical** imagery. Optical sensors measure
+Agrolytics's primary feed is **Sentinel-2 optical** imagery. Optical sensors measure
 reflected sunlight, so they are blind through clouds and at night — which is why the
 ingestion code had to relax its cloud filter to 50% and widen the lookback window to
 90 days (`app/services/satellite_ingestion.py`).
@@ -14,7 +14,7 @@ optical vegetation indices and fills the gaps when no clear optical scene exists
 
 ## Open-source / free SAR sources compared
 
-| Source | Operator | Band | Resolution | Access | Status in AgroVision |
+| Source | Operator | Band | Resolution | Access | Status in Agrolytics |
 |---|---|---|---|---|---|
 | **Sentinel-1 RTC / GRD** | ESA Copernicus | C-band | ~10–20 m | **Free**, analysis-ready via Microsoft Planetary Computer STAC (`sentinel-1-rtc`), AWS Open Data, Copernicus Data Space | **Integrated** (`app/services/radar_ingestion.py`) |
 | **SAOCOM-1A / 1B** | CONAE (Argentina) | L-band | ~10–100 m | Free for research; **CONAE registration**, no simple public STAC | Documented; L-band penetrates canopy/soil — strong fit for LATAM (deploy region São Paulo) |
@@ -24,7 +24,7 @@ optical vegetation indices and fills the gaps when no clear optical scene exists
 
 ## Chosen approach: Sentinel-1 RTC via Planetary Computer
 
-Sentinel-1 RTC is the only option that drops directly into AgroVision's existing
+Sentinel-1 RTC is the only option that drops directly into Agrolytics's existing
 stack (`pystac_client` + `planetary_computer.sign_inplace`), needs no extra
 credentials, and ships **analysis-ready** (radiometrically terrain corrected,
 tiled) data — so we avoid running our own SAR processing chain.

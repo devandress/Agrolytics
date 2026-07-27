@@ -1,4 +1,4 @@
-# Render Blueprint for AgroVision — 100% FREE tier ($0/mes)
+# Render Blueprint for Agrolytics — 100% FREE tier ($0/mes)
 # https://render.com/docs/blueprint-spec
 #
 # Arquitectura gratis:
@@ -25,14 +25,14 @@
 services:
   # ── Redis / Key Value (free, 25 MB) ─────────────────────────────────────────
   - type: keyvalue
-    name: agrovision-redis
+    name: agrolytics-redis
     plan: free
     ipAllowList: []          # only reachable from Render services
     maxmemoryPolicy: allkeys-lru
 
   # ── API (FastAPI / Uvicorn) ──────────────────────────────────────────────────
   - type: web
-    name: agrovision-api
+    name: agrolytics-api
     runtime: docker
     dockerfilePath: ./Dockerfile
     branch: main
@@ -53,13 +53,13 @@ services:
       - key: REDIS_URL
         fromService:
           type: keyvalue
-          name: agrovision-redis
+          name: agrolytics-redis
           property: connectionString
       - key: DATA_DIR                # efímero en plan free (sin disco persistente)
         value: /app/data
       - key: CORS_ORIGINS            # ajustar tras el primer deploy si Render
                                      # añade sufijo aleatorio al subdominio.
-        value: https://agrovision-api.onrender.com
+        value: https://agrolytics-api.onrender.com
       - key: DEEPSEEK_API_KEY        # set in dashboard (secret)
         sync: false
       - key: SENTRY_DSN              # optional error tracking; set in dashboard

@@ -1,4 +1,4 @@
-# Estrategia de control de plagas — AgroVision (vegetales costeros)
+# Estrategia de control de plagas — Agrolytics (vegetales costeros)
 
 ## El límite honesto
 Los satélites **localizan estrés, no identifican especies**. NDVI/NDMI dicen *dónde* y *cuánto*,

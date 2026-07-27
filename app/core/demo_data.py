@@ -1,6 +1,6 @@
 """Fixed DEMONSTRATION values for money and water/SGMA figures.
 
-⚠️  These are NOT real measurements. AgroVision has no cost-accounting or
+⚠️  These are NOT real measurements. Agrolytics has no cost-accounting or
 regulatory-allocation data source yet, so the financial and SGMA water-budget
 numbers shown to the Dueño/Regador roles are illustrative placeholders.
 

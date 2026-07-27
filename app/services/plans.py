@@ -21,7 +21,7 @@ PLANS: dict[str, dict] = {
         "indices": ["NDVI", "NDMI"],
         "radar_fusion": False,
         "export": False,
-        "tagline": "Para probar AgroVision en una parcela.",
+        "tagline": "Para probar Agrolytics en una parcela.",
         "features": [
             "1 parcela",
             "Índices NDVI y NDMI",

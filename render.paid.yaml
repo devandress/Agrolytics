@@ -1,4 +1,4 @@
-# Render Blueprint for AgroVision — https://render.com/docs/blueprint-spec
+# Render Blueprint for Agrolytics — https://render.com/docs/blueprint-spec
 #
 # Deploys the full stack: FastAPI web service, Celery worker, Celery beat,
 # managed PostgreSQL (PostGIS enabled by migration 001), and a Key Value (Redis).
@@ -16,7 +16,7 @@
 #     switch DATA_DIR to S3-compatible object storage (see S3_BUCKET in config).
 
 databases:
-  - name: agrovision-db
+  - name: agrolytics-db
     databaseName: agrolytics
     plan: free
     postgresMajorVersion: "15"
@@ -24,14 +24,14 @@ databases:
 services:
   # ── Redis / Key Value (Celery broker + JWT blocklist) ────────────────────────
   - type: keyvalue
-    name: agrovision-redis
+    name: agrolytics-redis
     plan: free
     ipAllowList: []          # only reachable from Render services
     maxmemoryPolicy: allkeys-lru
 
   # ── API (FastAPI / Uvicorn) ──────────────────────────────────────────────────
   - type: web
-    name: agrovision-api
+    name: agrolytics-api
     runtime: docker
     dockerfilePath: ./Dockerfile
     branch: main                # production tracks main (develop → render.staging.yaml)
@@ -39,7 +39,7 @@ services:
     healthCheckPath: /health
     dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
     disk:
-      name: agrovision-data
+      name: agrolytics-data
       mountPath: /app/data
       sizeGB: 1
     envVars:
@@ -53,18 +53,18 @@ services:
         generateValue: true
       - key: DATABASE_URL_SYNC       # async URL is derived from this in config.py
         fromDatabase:
-          name: agrovision-db
+          name: agrolytics-db
           property: connectionString
       - key: REDIS_URL
         fromService:
           type: keyvalue
-          name: agrovision-redis
+          name: agrolytics-redis
           property: connectionString
       - key: CORS_ORIGINS            # Render's free subdomain (matches this service
                                      # name). Confirm/adjust after first deploy if
                                      # Render appended a random suffix; add more
                                      # comma-separated origins for a separate frontend.
-        value: https://agrovision-api.onrender.com
+        value: https://agrolytics-api.onrender.com
       - key: DEEPSEEK_API_KEY        # set in dashboard (secret)
         sync: false
       - key: SENTRY_DSN              # optional error tracking; set in dashboard
@@ -76,7 +76,7 @@ services:
 
   # ── Celery worker (ingestion + insights) ─────────────────────────────────────
   - type: worker
-    name: agrovision-worker
+    name: agrolytics-worker
     runtime: docker
     dockerfilePath: ./Dockerfile
     branch: main
@@ -90,21 +90,21 @@ services:
       - key: JWT_SECRET
         fromService:
           type: web
-          name: agrovision-api
+          name: agrolytics-api
           envVarKey: JWT_SECRET
       - key: DATABASE_URL_SYNC
         fromDatabase:
-          name: agrovision-db
+          name: agrolytics-db
           property: connectionString
       - key: REDIS_URL
         fromService:
           type: keyvalue
-          name: agrovision-redis
+          name: agrolytics-redis
           property: connectionString
 
   # ── Celery beat (periodic schedule) ──────────────────────────────────────────
   - type: worker
-    name: agrovision-beat
+    name: agrolytics-beat
     runtime: docker
     dockerfilePath: ./Dockerfile
     branch: main
@@ -116,14 +116,14 @@ services:
       - key: JWT_SECRET
         fromService:
           type: web
-          name: agrovision-api
+          name: agrolytics-api
           envVarKey: JWT_SECRET
       - key: DATABASE_URL_SYNC
         fromDatabase:
-          name: agrovision-db
+          name: agrolytics-db
           property: connectionString
       - key: REDIS_URL
         fromService:
           type: keyvalue
-          name: agrovision-redis
+          name: agrolytics-redis
           property: connectionString

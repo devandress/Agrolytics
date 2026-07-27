@@ -1,4 +1,4 @@
-# Deploy AgroVision on Fly.io — always-on, (almost) free
+# Deploy Agrolytics on Fly.io — always-on, (almost) free
 
 This is the **always-on, near-free** path: one Fly.io machine that never sleeps,
 with **Supabase** (free Postgres, doesn't expire) and **Upstash** (free Redis).
@@ -56,7 +56,7 @@ You'll set this as `REDIS_URL`.
 
 ## 3. Create the Fly app
 
-From the repo root (`AgroVision/`), the included `fly.toml` is ready to use:
+From the repo root (`Agrolytics/`), the included `fly.toml` is ready to use:
 
 ```bash
 fly launch --no-deploy --copy-config --name <your-unique-app-name>

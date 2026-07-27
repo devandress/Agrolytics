@@ -1,6 +1,6 @@
-# Guía de Producción y Flujos de Trabajo — AgroVision
+# Guía de Producción y Flujos de Trabajo — Agrolytics
 
-Guía para llevar AgroVision a producción. **No es una guía genérica de SaaS**: está
+Guía para llevar Agrolytics a producción. **No es una guía genérica de SaaS**: está
 escrita para el stack real de este repo (FastAPI + Celery + PostGIS + frontend
 estático) e integra **Stripe**, **Vercel** y **Neon** como pediste.
 
@@ -13,10 +13,10 @@ estático) e integra **Stripe**, **Vercel** y **Neon** como pediste.
 
 ## 0. Realidad del stack — qué se puede y qué no
 
-La guía SaaS típica asume **Next.js todo-en-uno en Vercel**. AgroVision **no** es eso, y
+La guía SaaS típica asume **Next.js todo-en-uno en Vercel**. Agrolytics **no** es eso, y
 es clave entenderlo para no perder tiempo:
 
-| Pieza | AgroVision | ¿Va en Vercel? |
+| Pieza | Agrolytics | ¿Va en Vercel? |
 |---|---|---|
 | Frontend | `static/index.html` (HTML/JS vanilla + Leaflet + Chart.js) | ✅ Sí |
 | API | FastAPI / Uvicorn (`app/main.py`) | ❌ No |
@@ -63,7 +63,7 @@ procesos largos de descarga/procesamiento satelital. Esto ya está documentado e
 
 ## 1. Base de datos — Neon (PostgreSQL + PostGIS)
 
-AgroVision **necesita PostGIS** (geometrías de parcelas, rásters). Neon lo soporta.
+Agrolytics **necesita PostGIS** (geometrías de parcelas, rásters). Neon lo soporta.
 
 ### 1.1 Crear el proyecto
 
@@ -85,7 +85,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 SELECT postgis_version();
 ```
 
-### 1.3 Conectar AgroVision a Neon
+### 1.3 Conectar Agrolytics a Neon
 
 `app/core/config.py` ya normaliza una sola connection string: poné el URL **sync**
 de Neon en `DATABASE_URL_SYNC` y el async (`+asyncpg`) se deriva solo. El esquema
@@ -105,7 +105,7 @@ DATABASE_URL_SYNC=postgresql://USER:PASS@ep-xxx-pooler.region.aws.neon.tech/agro
 
 ### 1.4 Tablas que ya existen vs. las que faltan para SaaS
 
-AgroVision ya tiene: `users` (con `plan`, `role`, `preferences`, `notifications`),
+Agrolytics ya tiene: `users` (con `plan`, `role`, `preferences`, `notifications`),
 `fields`, `field_photo`, `field_task`, `index`, `insight`, `satellite_scene`.
 
 **Falta para facturación real (Stripe):** una tabla `subscriptions`
@@ -345,11 +345,11 @@ el plan **desde la suscripción** (no desde un valor que el cliente pueda mandar
 
 ## 5. Emails transaccionales (Resend)
 
-Hoy AgroVision no envía emails. Para SaaS conviene Resend + dominio verificado.
+Hoy Agrolytics no envía emails. Para SaaS conviene Resend + dominio verificado.
 
 ```env
 RESEND_API_KEY=re_xxx
-EMAIL_FROM="AgroVision <no-reply@tudominio.com>"
+EMAIL_FROM="Agrolytics <no-reply@tudominio.com>"
 ```
 
 Los que importan para este producto (encolar vía **Celery**, ya tenés el worker):
@@ -369,7 +369,7 @@ configurados, o todo va a spam. Nunca desde Gmail.
 
 ## 6. Seguridad (lo que ya está y lo que falta)
 
-AgroVision ya trae bastante hardening (ver [DEPLOYMENT.md](../DEPLOYMENT.md)):
+Agrolytics ya trae bastante hardening (ver [DEPLOYMENT.md](../DEPLOYMENT.md)):
 
 - ✅ **Fail-fast en producción** — `config.py` rechaza arrancar con `JWT_SECRET`
   débil, password `postgres` por defecto, o `CORS_ORIGINS=*`.
@@ -384,7 +384,7 @@ Pendiente / a reforzar:
 
 - ⬜ **Rotar `DEEPSEEK_API_KEY` y `JWT_SECRET`** que estuvieron en el working tree.
 - ⬜ **`CORS_ORIGINS`** debe incluir el dominio de Vercel (ej.
-  `https://agrovision.vercel.app,https://tudominio.com`).
+  `https://agrolytics.vercel.app,https://tudominio.com`).
 - ⬜ **Webhook de Stripe**: validar firma siempre (`STRIPE_WEBHOOK_SECRET`), nunca
   confiar en el body.
 - ⬜ **Verificación de email obligatoria** antes de dejar entrar al dashboard
@@ -412,7 +412,7 @@ Pendiente / a reforzar:
 
 ## 7. Flujos de trabajo (Git → Deploy)
 
-AgroVision usa entornos por rama (ver [DEPLOYMENT.md](../DEPLOYMENT.md)):
+Agrolytics usa entornos por rama (ver [DEPLOYMENT.md](../DEPLOYMENT.md)):
 
 | Entorno | Rama | Dónde | `APP_ENV` |
 |---|---|---|---|
@@ -479,7 +479,7 @@ Para no rehacer trabajo, en este orden:
 
 ## 10. Herramientas extra (agregar gradualmente)
 
-| Herramienta | Para qué en AgroVision |
+| Herramienta | Para qué en Agrolytics |
 |---|---|
 | **Sentry** | Errores del backend en tiempo real (`SENTRY_DSN` ya soportado) |
 | **PostHog** | Analytics + feature flags (ya integrado, opt-in con banner de cookies) |

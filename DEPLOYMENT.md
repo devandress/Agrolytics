@@ -1,8 +1,8 @@
-# AgroVision - Deployment Guide
+# Agrolytics - Deployment Guide
 
 ## Production Deployment
 
-This guide covers deploying AgroVision for ~100 users in a production environment.
+This guide covers deploying Agrolytics for ~100 users in a production environment.
 
 ### Prerequisites
 
@@ -61,7 +61,7 @@ The `docker-compose.yml` is optimized for ~100 concurrent users:
 1. **Clone and configure:**
    ```bash
    git clone <repo-url>
-   cd AgroVision
+   cd Agrolytics
    cp .env.example .env
    # Edit .env with your production values
    ```
@@ -145,7 +145,7 @@ For larger deployments:
 
 ## Dos entornos: Testing (local) y Deploy (Render)
 
-AgroVision se opera con **dos versiones**:
+Agrolytics se opera con **dos versiones**:
 
 | Entorno | Dónde | Para qué | `APP_ENV` |
 |---|---|---|---|
@@ -189,7 +189,7 @@ A `render.yaml` Blueprint is included. Steps:
    `render.yaml` and provisions the web service, Celery worker, Celery beat,
    PostgreSQL, and a Key Value (Redis).
 3. `CORS_ORIGINS` defaults to Render's free subdomain
-   (`https://agrovision-api.onrender.com`). After the first deploy, confirm the
+   (`https://agrolytics-api.onrender.com`). After the first deploy, confirm the
    real URL Render assigned (it may add a random suffix if the name was taken) and
    update `CORS_ORIGINS` to match. The bundled frontend is same-origin, so this is
    only strictly needed once you host a separate frontend.

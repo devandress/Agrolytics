@@ -1,6 +1,6 @@
 # Satélites y fusión multi-sensor
 
-AgroVision combina varios satélites gratuitos para maximizar la **densidad temporal**
+Agrolytics combina varios satélites gratuitos para maximizar la **densidad temporal**
 manteniendo el **detalle espacial**, normalizando todo a una escala comparable.
 
 ## Sensores

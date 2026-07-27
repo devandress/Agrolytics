@@ -1,4 +1,4 @@
-"""Declarative registry of the satellite sensors AgroVision can ingest.
+"""Declarative registry of the satellite sensors Agrolytics can ingest.
 
 All sources are free and available through the Microsoft Planetary Computer STAC
 API (signed URLs, no key) unless noted. Each sensor declares its STAC collection,

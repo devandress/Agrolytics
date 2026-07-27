@@ -1,4 +1,4 @@
-# AgroVision — Roadmap
+# Agrolytics — Roadmap
 
 ## Hecho (esta entrega)
 - **5 vistas por rol** sobre un solo login (selector en la barra): Dueño, Mayordomo, Regador,

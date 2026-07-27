@@ -1,6 +1,6 @@
-# Contributing to AgroVision
+# Contributing to Agrolytics
 
-Thank you for your interest in contributing to AgroVision! This guide outlines how to set up your development environment, write code, and submit changes.
+Thank you for your interest in contributing to Agrolytics! This guide outlines how to set up your development environment, write code, and submit changes.
 
 ## Development Setup
 
@@ -279,4 +279,4 @@ psycopg2.errors.UniqueViolation: duplicate key value violates unique constraint 
 - Join our team communication channel
 - Contact maintainers directly
 
-Thank you for contributing to AgroVision! 🌱
+Thank you for contributing to Agrolytics! 🌱
