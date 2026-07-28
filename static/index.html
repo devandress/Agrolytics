@@ -132,14 +132,32 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .pill{font-size:.72rem;font-weight:800;padding:.18rem .6rem;border-radius:20px;white-space:nowrap}
 .pill-ok{background:var(--green-pale);color:var(--green)}.pill-warn{background:var(--yellow-bg);color:var(--yellow)}.pill-crit{background:var(--red-bg);color:var(--red)}
 
-/* Análisis 2 columnas: rásters siempre a la izquierda, análisis+actividades a la derecha */
-.an-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:.9rem;align-items:start}
-@media(max-width:980px){.an-grid{grid-template-columns:1fr}}
-.an-left{position:sticky;top:0}
-@media(max-width:980px){.an-left{position:static}}
-.an-right{display:flex;flex-direction:column;gap:.9rem}
+/* Análisis: el mapa ocupa todo el ancho disponible; el detalle (perfil, series,
+   tareas, plagas, fenología, índices, clima) vive en un panel deslizable a la
+   derecha que se abre/cierra — "nunca mostrar toda la información a la vez". */
+.an-grid{display:flex;gap:0;position:relative;align-items:stretch}
+@media(max-width:980px){.an-grid{flex-direction:column}}
+.an-left{flex:1;min-width:0}
 .an-left #map{height:min(640px,72vh)}
 @media(max-width:980px){.an-left #map{height:300px}}
+
+.an-panel{width:380px;flex-shrink:0;margin-left:.9rem;background:var(--card);border:1px solid var(--border);
+  border-radius:16px;box-shadow:0 8px 26px rgba(0,0,0,.12);display:flex;flex-direction:column;
+  max-height:min(640px,72vh);overflow:hidden;transition:width .22s,margin-left .22s,opacity .18s}
+.an-panel.closed{width:0;margin-left:0;opacity:0;pointer-events:none}
+@media(max-width:980px){.an-panel{width:100%;margin-left:0;margin-top:.9rem;max-height:none}.an-panel.closed{display:none;width:100%;opacity:1}}
+.an-panel-tabs{display:flex;gap:.15rem;padding:.6rem 2.3rem .5rem .6rem;flex-shrink:0;position:relative}
+.an-panel-tabs .tbl-tab{flex:1;min-width:0;text-align:center;padding:.4rem .15rem;font-size:.62rem;
+  overflow:hidden;text-overflow:ellipsis}
+.an-panel-close{position:absolute;top:.55rem;right:.55rem;border:none;background:var(--card2);color:var(--muted);
+  cursor:pointer;border-radius:8px;width:26px;height:26px;font-size:.8rem}
+.an-panel-close:hover{background:var(--red-bg);color:var(--red)}
+.an-panel-scroll{flex:1;overflow-y:auto;padding:.9rem;display:flex;flex-direction:column;gap:.9rem}
+/* top:56px, not 14px: clears the recenter (⟲) Leaflet control also docked topright */
+.an-panel-opener{position:absolute;top:56px;right:14px;z-index:20;background:var(--card);border:1px solid var(--border);
+  border-radius:10px;padding:.5rem .8rem;box-shadow:var(--shadow);cursor:pointer;color:var(--green);
+  font-weight:700;font-size:.8rem;display:flex;align-items:center;gap:.4rem}
+.an-panel-opener:hover{background:var(--card2)}
 
 /* MAP — the map is the product's core surface, so it should dominate the
    viewport (~70-80%) rather than share space evenly with side cards. */
@@ -1245,9 +1263,9 @@ async function renderAnalisis(){
       <div class="card"><div class="empty">Cargando pilares…</div></div></div>
     <div id="an-alerts"></div>
     <div class="an-grid">
-      <!-- IZQUIERDA: rásters siempre visibles -->
+      <!-- IZQUIERDA: mapa, ocupa todo el ancho disponible -->
       <div class="an-left">
-        <div class="card map-card">
+        <div class="card map-card" style="position:relative">
           <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">
             <span><b>Mapa · ${analysisIndex}</b> <span style="color:var(--muted);font-weight:400">— ${mapMeaning(analysisIndex)}</span></span>
             <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
@@ -1257,7 +1275,9 @@ async function renderAnalisis(){
               <button class="add-btn" type="button" onclick="anRefreshData()" title="Descargar / actualizar fechas satelitales">⟳ Cargar</button>
             </div>
           </div>
-          <div class="map-wrap"><div id="map"></div><div id="px-tip" class="px-tip"></div></div>
+          <div class="map-wrap"><div id="map"></div><div id="px-tip" class="px-tip"></div>
+            <button class="an-panel-opener" id="an-panel-opener" style="display:none" onclick="toggleAnPanel(true)">${ic('doc')} Ver panel</button>
+          </div>
           <!-- Timeline de fechas satelitales — arrastrar cambia el mapa (estilo Earth Engine). -->
           <div class="an-timeline">
             <span class="an-tl-date" id="an-tl-date-min">—</span>
@@ -1269,32 +1289,35 @@ async function renderAnalisis(){
           <div class="map-legend" id="an-colorbar"></div>
         </div>
       </div>
-      <!-- DERECHA: análisis + actividades -->
-      <div class="an-right">
-        ${profileCardHtml(currentField)}
-        <div class="card"><div class="card-title">Serie de tiempo multi-sensor</div>
-          <div style="height:210px;position:relative"><canvas id="an-chart"></canvas></div>
-          <div id="an-legend" style="display:flex;gap:.8rem;flex-wrap:wrap;margin-top:.5rem;font-size:.74rem;color:var(--muted)"></div>
-          <div style="margin-top:.6rem"><button class="add-btn" onclick="doFuse()">Fusionar (rellenar huecos)</button>
-            <span id="an-fuse-note" style="font-size:.74rem;color:var(--muted);margin-left:.6rem"></span></div>
-        </div>
-        <!-- Asistente IA oculto de momento (código intacto para reactivar) -->
-        <div class="card">
-          <div class="card-title">Tareas de la parcela</div>
-          <div id="proposed-tasks" style="display:none"></div>
-          <div id="an-tasks"><div class="empty" style="padding:.7rem">Cargando…</div></div>
-        </div>
-      </div>
-    </div>
-    <div class="card"><div class="card-title">${ic('chart')} Seguimiento en el tiempo</div>
-      <div class="tables-wrap">
-        <div class="tables-side">
-          <button class="tbl-tab active" onclick="showTable('plagas',this)">${ic('pest')} Plagas</button>
+      <!-- DERECHA: panel deslizable — un tab visible a la vez, nunca todo junto -->
+      <div class="an-panel" id="an-panel">
+        <div class="an-panel-tabs">
+          <button class="tbl-tab active" onclick="showTable('resumen',this)">${ic('leaf')} Resumen</button>
+          <button class="tbl-tab" onclick="showTable('plagas',this)">${ic('pest')} Plagas</button>
           <button class="tbl-tab" onclick="showTable('fenologia',this)">${ic('sprout')} Fenología</button>
           <button class="tbl-tab" onclick="showTable('indices',this)">${ic('chart')} Índices</button>
-          <button class="tbl-tab" onclick="showTable('clima',this)">${ic('sun')} Clima y tareas</button>
+          <button class="tbl-tab" onclick="showTable('clima',this)">${ic('sun')} Clima</button>
+          <button class="an-panel-close" onclick="toggleAnPanel(false)" title="Cerrar panel">✕</button>
         </div>
-        <div class="tables-body" id="tables-body"><div class="empty">Cargando…</div></div>
+        <div class="an-panel-scroll">
+          <div id="an-panel-resumen">
+            ${profileCardHtml(currentField)}
+            <div class="card"><div class="card-title">Serie de tiempo multi-sensor</div>
+              <div style="height:210px;position:relative"><canvas id="an-chart"></canvas></div>
+              <div id="an-legend" style="display:flex;gap:.8rem;flex-wrap:wrap;margin-top:.5rem;font-size:.74rem;color:var(--muted)"></div>
+              <div style="margin-top:.6rem"><button class="add-btn" onclick="doFuse()">Fusionar (rellenar huecos)</button>
+                <span id="an-fuse-note" style="font-size:.74rem;color:var(--muted);margin-left:.6rem"></span></div>
+            </div>
+            <div class="card">
+              <div class="card-title">Tareas de la parcela</div>
+              <div id="proposed-tasks" style="display:none"></div>
+              <div id="an-tasks"><div class="empty" style="padding:.7rem">Cargando…</div></div>
+            </div>
+          </div>
+          <div id="an-panel-tables" style="display:none">
+            <div class="tables-body" id="tables-body"><div class="empty">Cargando…</div></div>
+          </div>
+        </div>
       </div>
     </div>
     <details class="card" id="he-details" style="padding:0" ontoggle="if(this.open)loadHumEvap()">
@@ -1314,7 +1337,7 @@ async function renderAnalisis(){
   await loadAnChart();
   await loadAnLayers();
   await loadAnTasks();
-  showTable('plagas');
+  showTable('resumen');
 }
 
 let heC1=null,heC2=null;
@@ -1341,12 +1364,28 @@ async function loadHumEvap(){
   }catch{}
 }
 
-// ── Sidebar de tablas de seguimiento ──
+// ── Panel deslizable de la vista Análisis: Resumen | Plagas | Fenología | Índices | Clima ──
 function showTable(which, btn){
   document.querySelectorAll('.tbl-tab').forEach(b=>b.classList.remove('active'));
   if(btn)btn.classList.add('active');
   else{const t=document.querySelector(`.tbl-tab[onclick*="'${which}'"]`);if(t)t.classList.add('active');}
-  ({plagas:tablePlagas,fenologia:tableFenologia,indices:tableIndices,clima:tableClima}[which])();
+  const res=document.getElementById('an-panel-resumen'),tables=document.getElementById('an-panel-tables');
+  if(res&&tables){
+    if(which==='resumen'){res.style.display='';tables.style.display='none';}
+    else{res.style.display='none';tables.style.display='';
+      ({plagas:tablePlagas,fenologia:tableFenologia,indices:tableIndices,clima:tableClima}[which])();}
+  }
+  toggleAnPanel(true);
+}
+// Colapsa/expande el panel derecho — el mapa recupera ese ancho al cerrarlo.
+function toggleAnPanel(open){
+  const panel=document.getElementById('an-panel'),opener=document.getElementById('an-panel-opener');
+  if(!panel)return;
+  panel.classList.toggle('closed',!open);
+  if(opener)opener.style.display=open?'none':'flex';
+  // 230ms matches the CSS width transition — refit only after it's done, or
+  // fitBounds computes against the mid-transition (wrong) container width.
+  setTimeout(()=>{if(leafMap){leafMap.invalidateSize();refitAnMap();}},230);
 }
 
 const CONF_LABEL={alta:'confianza alta — datos medidos',media:'confianza media — parte pronóstico',baja:'confianza baja — poca data real'};
