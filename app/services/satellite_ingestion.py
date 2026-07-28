@@ -56,10 +56,12 @@ def ingest_scenes_for_fields(db: Session) -> int:
     client = _open_stac_client()
     new_records = 0
     for field in fields:
+        field_id = field.id
         try:
             new_records += _process_field(db, client, field, _field_date_range(field))
         except Exception as exc:
-            logger.error(f"Error processing field {field.id}: {exc}")
+            db.rollback()
+            logger.error(f"Error processing field {field_id}: {exc}")
 
     return new_records
 
