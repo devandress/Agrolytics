@@ -1499,7 +1499,11 @@ function dismissProposed(i){proposed.splice(i,1);renderProposed();}
 
 // ════ DATA & PIPELINE ════
 async function downloadAuthed(path,filename){
-  try{const r=await api(path);const blob=await r.blob();const url=URL.createObjectURL(blob);
+  try{
+    const r=await api(path);
+    if(r.status===402){const d=await r.json().catch(()=>({}));toast(d.detail||'Exportar no está incluido en tu plan.');return;}
+    if(!r.ok){toast('Error al descargar');return;}
+    const blob=await r.blob();const url=URL.createObjectURL(blob);
     const a=document.createElement('a');a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);
     toast('Descargado: '+filename);
   }catch{toast('Error al descargar');}
@@ -1561,7 +1565,14 @@ const IDX_NOTE={NDRE:'El NDRE solo lo da Sentinel-2 (banda red-edge). Si acabas 
   RVI:'El RVI viene del radar Sentinel-1. Ejecuta la ingesta de radar para verlo.'};
 async function loadAnChart(){
   try{
-    const d=await(await api(`/fields/${currentField.id}/analysis/timeseries?index=${analysisIndex}&days=400`)).json();
+    const resp=await api(`/fields/${currentField.id}/analysis/timeseries?index=${analysisIndex}&days=400`);
+    const d=await resp.json();
+    if(resp.status===402){
+      if(anChart){anChart.destroy();anChart=null;}
+      document.getElementById('an-legend').innerHTML=
+        `<span style="color:var(--yellow)">${esc(d.detail||'No incluido en tu plan.')} <a href="#" onclick="setRole('plan');return false" style="color:var(--green);font-weight:700">Ver planes →</a></span>`;
+      return;
+    }
     if(!d.series||!d.series.length){
       if(anChart){anChart.destroy();anChart=null;}
       document.getElementById('an-legend').innerHTML=
@@ -1600,7 +1611,9 @@ async function loadAnChart(){
 async function doFuse(){
   const note=document.getElementById('an-fuse-note');note.textContent='Fusionando…';
   try{
-    const d=await(await api(`/fields/${currentField.id}/analysis/fuse?index=${analysisIndex}`,{method:'POST'})).json();
+    const resp=await api(`/fields/${currentField.id}/analysis/fuse?index=${analysisIndex}`,{method:'POST'});
+    const d=await resp.json();
+    if(resp.status===402){note.innerHTML=`${esc(d.detail||'No incluido en tu plan.')} <a href="#" onclick="setRole('plan');return false" style="color:var(--green);font-weight:700">Ver planes →</a>`;return;}
     note.textContent=`${d.n_observed} observados · ${d.n_fused} fusionados. ${d.n_fused?'':'(cobertura densa: sin huecos que rellenar)'}`;
     toast('Normalización aplicada. '+(d.n_fused?d.n_fused+' puntos fusionados':'sin huecos que rellenar'));
     // overlay fused points that fall on existing date labels (safe: no axis mutation)

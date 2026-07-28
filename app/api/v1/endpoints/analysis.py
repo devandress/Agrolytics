@@ -58,6 +58,17 @@ async def _own(db, field_id, user_id):
         raise HTTPException(404, "Campo no encontrado.")
 
 
+def _require_index_plan(current_user, index: str) -> None:
+    """Server-side plan gate — the free plan's index list (config.py) is only
+    real if it's enforced here, not just displayed in the billing UI."""
+    from app.services.plans import plan_allows_index
+    if not plan_allows_index(current_user.plan, index):
+        raise HTTPException(
+            status_code=402,
+            detail=f"El índice {index.upper()} no está incluido en tu plan. Mejora tu plan para verlo.",
+        )
+
+
 def _sensor_of(meta: dict | None) -> str:
     if meta and meta.get("sensor"):
         return meta["sensor"]
@@ -76,6 +87,7 @@ async def timeseries(field_id: uuid.UUID, current_user: CurrentUser, db: DBSessi
                      index: str = Query("NDVI"), days: int = Query(365, ge=1, le=1825)) -> dict[str, Any]:
     """Unified multi-sensor index time-series; each point tagged with its sensor."""
     await _own(db, field_id, current_user.id)
+    _require_index_plan(current_user, index)
     since = date.today() - timedelta(days=days)
     rows = (await db.execute(
         select(Index).where(and_(Index.field_id == field_id, Index.index_type == index.upper(),
@@ -97,6 +109,7 @@ async def layers(field_id: uuid.UUID, current_user: CurrentUser, db: DBSession,
                  index: str = Query("NDVI")) -> list[dict[str, Any]]:
     """Available raster layers (date + sensor) for the interactive viewer."""
     await _own(db, field_id, current_user.id)
+    _require_index_plan(current_user, index)
     rows = (await db.execute(
         select(Index).where(and_(Index.field_id == field_id, Index.index_type == index.upper(),
                                  Index.raster_uri.isnot(None)))
@@ -118,6 +131,7 @@ async def render(field_id: uuid.UUID, current_user: CurrentUser, db: DBSession,
                  sensor: str = Query("s2")) -> Response:
     """Normalised RGBA PNG for a given date+sensor; bounds in X-Raster-Bounds header."""
     await _own(db, field_id, current_user.id)
+    _require_index_plan(current_user, index)
     try:
         d = date.fromisoformat(date_str)
     except ValueError:
@@ -516,6 +530,9 @@ async def export_field(field_id: uuid.UUID, current_user: CurrentUser, db: DBSes
     bundled for cloud fusion). Only real observations — no synthetic noise.
     """
     await _own(db, field_id, current_user.id)
+    from app.services.plans import plan_allows_export
+    if not plan_allows_export(current_user.plan):
+        raise HTTPException(402, "La exportación no está incluida en tu plan. Mejora tu plan para exportar.")
     rows = (await db.execute(
         select(Index.date, Index.index_type, Index.mean_value, Index.raster_uri, Index.extra_meta)
         .where(Index.field_id == field_id, Index.mean_value.isnot(None))
@@ -569,6 +586,9 @@ async def fuse(field_id: uuid.UUID, current_user: CurrentUser, db: DBSession,
     tagged 'observado' vs 'fusionado (estimado)'.
     """
     await _own(db, field_id, current_user.id)
+    from app.services.plans import plan_allows_radar_fusion
+    if not plan_allows_radar_fusion(current_user.plan):
+        raise HTTPException(402, "La fusión multi-satélite no está incluida en tu plan. Mejora tu plan para usarla.")
     rows = (await db.execute(
         select(Index.date, Index.mean_value, Index.extra_meta).where(
             and_(Index.field_id == field_id, Index.index_type == index.upper(),

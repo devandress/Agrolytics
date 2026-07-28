@@ -41,7 +41,7 @@ async def create_field(payload: FieldCreate, current_user: CurrentUser, db: DBSe
     # Enforce the subscription plan's field limit (server-side, not just UI).
     from sqlalchemy import func
 
-    from app.services.plans import plan_max_fields
+    from app.services.plans import plan_max_fields, plan_max_ha
     limit = plan_max_fields(current_user.plan)
     if limit is not None:
         used = (await db.execute(
@@ -61,6 +61,14 @@ async def create_field(payload: FieldCreate, current_user: CurrentUser, db: DBSe
         )
     )
     area_ha: float = area_result.scalar_one() or 0.0
+
+    max_ha = plan_max_ha(current_user.plan)
+    if max_ha is not None and area_ha > max_ha:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Esta parcela mide {area_ha:.1f} ha; tu plan permite hasta {max_ha} ha. "
+                    "Mejora tu plan para agregarla.",
+        )
 
     field = Field(
         user_id=current_user.id,
@@ -158,11 +166,22 @@ async def update_field(
         field.context = payload.context
     if payload.geometry is not None:
         geojson_str = json.dumps(_normalize_geometry(payload.geometry))
-        field.geometry = ST_GeomFromGeoJSON(geojson_str)
         area_result = await db.execute(
             select(ST_Area(ST_Transform(ST_GeomFromGeoJSON(geojson_str), 3857)) / 10_000)
         )
-        field.area_ha = round(area_result.scalar_one() or 0.0, 4)
+        new_area_ha = round(area_result.scalar_one() or 0.0, 4)
+
+        from app.services.plans import plan_max_ha
+        max_ha = plan_max_ha(current_user.plan)
+        if max_ha is not None and new_area_ha > max_ha:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Esta forma mide {new_area_ha:.1f} ha; tu plan permite hasta {max_ha} ha. "
+                        "Mejora tu plan para agrandarla.",
+            )
+
+        field.geometry = ST_GeomFromGeoJSON(geojson_str)
+        field.area_ha = new_area_ha
 
     await db.commit()
     return await _field_with_geojson(field_id, db)

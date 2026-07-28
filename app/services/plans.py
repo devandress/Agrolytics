@@ -97,6 +97,22 @@ def plan_max_fields(key: str | None) -> int | None:
     return get_plan(key)["max_fields"]
 
 
+def plan_max_ha(key: str | None) -> float | None:
+    return get_plan(key).get("max_ha")
+
+
+def plan_allows_index(key: str | None, index: str) -> bool:
+    return (index or "").upper() in get_plan(key)["indices"]
+
+
+def plan_allows_radar_fusion(key: str | None) -> bool:
+    return bool(get_plan(key)["radar_fusion"])
+
+
+def plan_allows_export(key: str | None) -> bool:
+    return bool(get_plan(key)["export"])
+
+
 def price_mxn_for_ha(plan_key: str, total_ha: float) -> dict:
     """Monthly MXN price for a plan given total hectares under management.
 

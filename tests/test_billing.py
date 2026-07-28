@@ -6,7 +6,11 @@ from app.services.plans import (
     PLANS,
     get_plan,
     plan_allows_ai,
+    plan_allows_export,
+    plan_allows_index,
+    plan_allows_radar_fusion,
     plan_max_fields,
+    plan_max_ha,
     price_mxn_for_ha,
 )
 
@@ -64,3 +68,24 @@ def test_price_mxn_for_ha_pro_applies_volume_discount_past_20ha():
     marginal = at_30 - at_20
     # The next 10 ha must bill at the scale rate, not the (higher) base rate.
     assert round(10 * MXN_PER_HA_SCALE) <= marginal < round(10 * MXN_PER_HA)
+
+
+def test_plan_max_ha_gates_free_only():
+    assert plan_max_ha("free") == 3
+    assert plan_max_ha("pro") is None
+    assert plan_max_ha("enterprise") is None
+
+
+def test_plan_allows_index_matches_catalog():
+    assert plan_allows_index("free", "NDVI") is True
+    assert plan_allows_index("free", "ndmi") is True  # case-insensitive
+    assert plan_allows_index("free", "NDRE") is False
+    assert plan_allows_index("pro", "NDRE") is True
+    assert plan_allows_index("enterprise", "VHVV") is True
+
+
+def test_plan_allows_radar_fusion_and_export():
+    assert plan_allows_radar_fusion("free") is False
+    assert plan_allows_radar_fusion("pro") is True
+    assert plan_allows_export("free") is False
+    assert plan_allows_export("pro") is True
