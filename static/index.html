@@ -683,6 +683,7 @@ async function deleteField(id,name,ev){
 function setRole(role){
   currentRole=role;leafMap=null;markers={};renderTabs();
   if(_anPoll){clearInterval(_anPoll);_anPoll=null;}
+  stopPrepPoll();
   // Field-centric views keep the sidebar; cross-field role views hide it.
   document.getElementById('sidebar').classList.toggle('hidden',!(role==='mayordomo'||role==='analisis'||role==='data'));closeSidebar();
   ({analisis:renderAnalisis,data:renderData,duenio:renderDuenio,mayordomo:renderMayordomo,regador:renderRegador,agronomo:renderAgronomo,trabajador:renderTrabajador,cuenta:renderCuenta,plan:renderPlan,notif:renderNotif,reportes:renderReportes,whatsapp:renderWhatsApp}[role])();
@@ -1126,9 +1127,61 @@ const SENSOR_COLOR={s2:'#2e7d32',ls:'#1565c0',modis:'#e65100',s1:'#6a1b9a',fused
 const SENSOR_NAME={s2:'Sentinel-2 (10m)',ls:'Landsat (30m)',modis:'MODIS (250m)',s1:'Sentinel-1 (10m)',fused:'Fusionado (estimado)'};
 let analysisIndex='NDMI',anChart=null,ovA=null,ovB=null,sbs=null;
 
+// A just-created parcela has zero satellite observations until the background
+// ingestion finishes (~1–3 min: STAC search + raster download + index math).
+// Without this gate the user lands on a dashboard of blank charts and
+// "Ejecuta la ingesta satelital" — developer language, for something already
+// running on its own — and it reads as broken on their very first screen.
+let _prepPoll=null;
+function stopPrepPoll(){if(_prepPoll){clearInterval(_prepPoll);_prepPoll=null;}}
+async function fieldHasData(fieldId){
+  try{
+    const r=await api(`/fields/${fieldId}/analysis/datastats`);
+    if(!r.ok)return true;  // can't tell → don't block the normal panel
+    return ((await r.json()).total_obs||0)>0;
+  }catch{return true;}
+}
+function renderPreparingPanel(){
+  const c=document.getElementById('content');
+  c.innerHTML=`
+    <div class="view-head"><div><div class="view-title">${ic('leaf')} ${esc(currentField.name)}</div>
+      <div class="view-sub">${currentField.area_ha?currentField.area_ha.toFixed(1)+' ha':''}${currentField.crop_type?' · '+esc(currentField.crop_type):''}</div></div></div>
+    <div class="card" style="text-align:center;padding:2.4rem 1.2rem">
+      <div style="font-size:2.2rem;line-height:1">🛰️</div>
+      <div style="font-size:1.15rem;font-weight:800;margin-top:.6rem">Buscando las imágenes de tu parcela</div>
+      <p style="font-size:.92rem;color:var(--muted);max-width:46ch;margin:.5rem auto 0;line-height:1.55">
+        Estamos descargando el último año de fotos satelitales de <b>${esc(currentField.name)}</b> y calculando
+        sus índices. Tarda un par de minutos la primera vez. Podés cerrar esta pantalla: seguimos trabajando igual.
+      </p>
+      <div style="margin-top:1.1rem"><span class="spin" style="border-color:rgba(46,125,50,.25);border-top-color:var(--green);width:20px;height:20px"></span></div>
+      <div id="prep-note" style="font-size:.8rem;color:var(--muted);margin-top:.9rem">Esto se actualiza solo cuando lleguen los datos.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Mientras tanto</div>
+      <p style="font-size:.88rem;color:var(--text2);line-height:1.6">
+        Completá el perfil de la parcela (riego, fertilización, riesgos) para que las recomendaciones salgan
+        ajustadas a tu manejo desde el primer día.</p>
+      <button class="add-btn" style="margin-top:.5rem" onclick="wzStart('edit', currentField)">Completar perfil</button>
+    </div>`;
+  stopPrepPoll();
+  let ticks=0;
+  _prepPoll=setInterval(async()=>{
+    ticks++;
+    if(!currentField||currentRole!=='analisis'){stopPrepPoll();return;}
+    if(await fieldHasData(currentField.id)){stopPrepPoll();renderAnalisis();return;}
+    if(ticks>=40){  // ~3.5 min: stop spinning forever, offer a manual retry
+      stopPrepPoll();
+      const n=document.getElementById('prep-note');
+      if(n)n.innerHTML='Está tardando más de lo normal. <a href="#" onclick="renderAnalisis();return false" style="color:var(--green);font-weight:700">Reintentar</a>';
+    }
+  },5000);
+}
+
 async function renderAnalisis(){
   const c=document.getElementById('content');
   if(!currentField){c.innerHTML='<div class="empty">Selecciona un campo en la barra lateral.</div>';return;}
+  stopPrepPoll();
+  if(!await fieldHasData(currentField.id)){renderPreparingPanel();return;}
   chatMsgs=[];proposed=[];  // reset assistant per parcela
   c.innerHTML=`
     ${quickGuideHtml()}

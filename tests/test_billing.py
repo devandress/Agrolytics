@@ -46,7 +46,9 @@ def test_price_mxn_for_ha_free_is_flat_zero():
     price = price_mxn_for_ha("free", 2)
     assert price["mxn_month"] == 0
     assert price["over_ha_limit"] is False
-    assert price_mxn_for_ha("free", 10)["over_ha_limit"] is True
+    # Free is limited by field COUNT, not area — a realistic 40 ha block must not
+    # be rejected (that made the free tier unusable for this market).
+    assert price_mxn_for_ha("free", 40)["over_ha_limit"] is False
 
 
 def test_price_mxn_for_ha_enterprise_is_custom():
@@ -70,8 +72,9 @@ def test_price_mxn_for_ha_pro_applies_volume_discount_past_20ha():
     assert round(10 * MXN_PER_HA_SCALE) <= marginal < round(10 * MXN_PER_HA)
 
 
-def test_plan_max_ha_gates_free_only():
-    assert plan_max_ha("free") == 3
+def test_no_plan_caps_area():
+    # Area caps are deliberately absent — see FREE_MAX_HA comment in plans.py.
+    assert plan_max_ha("free") is None
     assert plan_max_ha("pro") is None
     assert plan_max_ha("enterprise") is None
 

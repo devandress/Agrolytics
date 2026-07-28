@@ -18,7 +18,14 @@ MXN_PER_HA_SCALE = 14    # Productor tier, hectare 21 and beyond
 MXN_MINIMUM = 149        # floor per paying account, regardless of hectares
 SCALE_THRESHOLD_HA = 20
 
-FREE_MAX_HA = 3          # Explorador: free, but capped in area as well as fields
+# Explorador is capped by FIELD COUNT, not area. An area cap was tried (3 ha) and
+# removed: a typical coastal-vegetable block in this market runs 10–40 ha, so any
+# realistic first parcela got rejected at the last step of the signup wizard —
+# the free tier was unusable by the exact customer it was meant to attract. The
+# trial's value is "see it work on YOUR real field"; the limits that actually
+# protect revenue are 1 parcela + the feature gates (NDVI/NDMI only, no AI, no
+# export, no radar fusion), all enforced server-side.
+FREE_MAX_HA = None
 
 PLANS: dict[str, dict] = {
     "free": {
@@ -32,9 +39,9 @@ PLANS: dict[str, dict] = {
         "indices": ["NDVI", "NDMI"],
         "radar_fusion": False,
         "export": False,
-        "tagline": "Para probar Agrolytics en una parcela chica.",
+        "tagline": "Probá Agrolytics en una parcela real, del tamaño que sea.",
         "features": [
-            f"1 parcela · hasta {FREE_MAX_HA} ha",
+            "1 parcela, sin límite de hectáreas",
             "Índices NDVI y NDMI",
             "Clima y alertas básicas",
         ],
@@ -116,11 +123,12 @@ def plan_allows_export(key: str | None) -> bool:
 def price_mxn_for_ha(plan_key: str, total_ha: float) -> dict:
     """Monthly MXN price for a plan given total hectares under management.
 
-    Only "pro" is metered — free is flat ($0, capped by area) and enterprise is
-    a custom quote (no self-serve number to compute).
+    Only "pro" is metered — free is flat ($0, limited by field count) and
+    enterprise is a custom quote (no self-serve number to compute).
     """
     if plan_key == "free":
-        return {"mxn_month": 0, "billing": "flat", "over_ha_limit": total_ha > FREE_MAX_HA}
+        over = FREE_MAX_HA is not None and total_ha > FREE_MAX_HA
+        return {"mxn_month": 0, "billing": "flat", "over_ha_limit": over}
     if plan_key == "enterprise":
         return {"mxn_month": None, "billing": "custom"}
 
