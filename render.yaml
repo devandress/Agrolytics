@@ -44,7 +44,11 @@ services:
     branch: main
     plan: free
     healthCheckPath: /health
-    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    # MUST go through entrypoint.sh: Render's dockerCommand REPLACES the
+    # Dockerfile ENTRYPOINT, and entrypoint.sh is what runs alembic migrations
+    # (RUN_MIGRATIONS=true). A bare `uvicorn ...` here silently skips them —
+    # that's exactly how migration 007 was missed and prod auth 500'd.
+    dockerCommand: /app/entrypoint.sh uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
     envVars:
       - key: RUN_MIGRATIONS          # run alembic upgrade head on boot (entrypoint.sh)
         value: "true"

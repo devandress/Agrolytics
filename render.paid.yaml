@@ -37,7 +37,8 @@ services:
     branch: main                # production tracks main (develop → render.staging.yaml)
     plan: free
     healthCheckPath: /health
-    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    # Through entrypoint.sh so migrations run — dockerCommand replaces ENTRYPOINT.
+    dockerCommand: /app/entrypoint.sh uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
     disk:
       name: agrolytics-data
       mountPath: /app/data
