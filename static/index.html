@@ -149,6 +149,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .legend-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:.35rem;vertical-align:middle;box-shadow:0 0 0 2px #fff}
 .pin-marker{position:relative;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 3px 9px rgba(0,0,0,.5);width:24px;height:24px}
 .pin-marker::after{content:'';position:absolute;top:50%;left:50%;width:7px;height:7px;background:#fff;border-radius:50%;transform:translate(-50%,-50%)}
+.map-recenter-btn{width:30px;height:30px;background:#fff;border:2px solid rgba(0,0,0,.2);border-radius:4px;cursor:pointer;font-size:16px;line-height:1;color:var(--text);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.25);padding:0}
+.map-recenter-btn:hover{background:var(--card2)}
 /* WhatsApp alert button */
 .wa-btn{background:#25D366;color:#fff;border:none;border-radius:10px;padding:.5rem .85rem;font-weight:700;font-size:.82rem;cursor:pointer;display:inline-flex;align-items:center;gap:.4rem;box-shadow:0 2px 8px rgba(37,211,102,.4)}
 .wa-btn:hover{background:#1da851}
@@ -850,6 +852,7 @@ async function loadTasksAndMap(){
       <button onclick="doneTask('${t.id}')" style="border:none;background:#2e7d32;color:#fff;border-radius:6px;padding:.3rem .6rem;cursor:pointer;margin-top:.3rem">✓ Hecho</button>`);
     markers[t.id]=m;pts.push(pt);
   });
+  window._lastTaskPts=pts;
   if(pts.length)leafMap.fitBounds(pts,{padding:[40,40],maxZoom:14});
   setTimeout(()=>leafMap.invalidateSize(),200);
 }
@@ -943,9 +946,36 @@ function esriTileLayer(){
   });
   return layer;
 }
+// Custom Leaflet control: recenters the map when the user has panned/zoomed
+// away and lost their fields (no fixed maxBounds — fields can be anywhere in
+// the world, so "home" is computed from whatever's currently loaded).
+function addRecenterControl(map,fitFn){
+  const Recenter=L.Control.extend({
+    options:{position:'topright'},
+    onAdd(){
+      const btn=L.DomUtil.create('button','leaflet-bar map-recenter-btn');
+      btn.type='button';btn.title='Centrar en mis parcelas';btn.innerHTML='⟲';
+      L.DomEvent.disableClickPropagation(btn);
+      L.DomEvent.on(btn,'click',fitFn);
+      return btn;
+    }
+  });
+  new Recenter().addTo(map);
+}
+function refitMayordomoMap(){
+  if(!leafMap)return;
+  const pts=window._lastTaskPts||[];
+  if(pts.length){leafMap.fitBounds(pts,{padding:[40,40],maxZoom:14});return;}
+  if(window._fieldOutlines&&window._fieldOutlines.length){
+    const grp=L.featureGroup(window._fieldOutlines);
+    if(grp.getBounds().isValid()){leafMap.fitBounds(grp.getBounds(),{padding:[40,40],maxZoom:14});return;}
+  }
+  leafMap.setView([20,-100],4);
+}
 function initMap(){
-  leafMap=L.map('map',{attributionControl:false}).setView([20,-100],4);
+  leafMap=L.map('map',{attributionControl:false,minZoom:3}).setView([20,-100],4);
   esriTileLayer().addTo(leafMap);
+  addRecenterControl(leafMap,refitMayordomoMap);
 }
 async function genTasks(){toast('Analizando campos…');try{const d=await(await api('/tasks/generate',{method:'POST'})).json();toast(d.message);loadTasksAndMap();}catch{toast('Error al generar tareas');}}
 async function doneTask(id){try{await api(`/tasks/${id}/complete`,{method:'POST'});toast('Tarea completada');loadTasksAndMap();}catch{toast('Error');}}
@@ -1797,10 +1827,15 @@ async function anRefreshData(){
   },5000);
 }
 
+function refitAnMap(){
+  if(!leafMap||!currentField)return;
+  try{const b=L.geoJSON(currentField.geometry).getBounds();if(b.isValid())leafMap.fitBounds(b,{padding:[24,24],maxZoom:18});}catch{}
+}
 function initAnMap(){
   if(leafMap){try{leafMap.remove();}catch{}leafMap=null;}
-  leafMap=L.map('map',{attributionControl:false}).setView([20,-100],4);
+  leafMap=L.map('map',{attributionControl:false,minZoom:3}).setView([20,-100],4);
   esriTileLayer().addTo(leafMap);
+  addRecenterControl(leafMap,refitAnMap);
   leafMap.on('mousemove',anHover);
   leafMap.on('mouseout',()=>{const t=document.getElementById('px-tip');if(t)t.style.display='none';});
   // Contorno de la parcela (blanco para verse sobre la imagen satelital) + zoom al recuadro.
