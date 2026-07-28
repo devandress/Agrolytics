@@ -26,6 +26,9 @@ class User(Base):
     full_name: Mapped[str | None] = mapped_column(String(255))
     # Subscription plan key (free | pro | enterprise) — see app/services/plans.py
     plan: Mapped[str] = mapped_column(String(50), nullable=False, default="free")
+    # MercadoPago recurring subscription id (preapproval) — set once the user
+    # authorizes billing, used to check status and to let them cancel it.
+    mercadopago_preapproval_id: Mapped[str | None] = mapped_column(String(64))
     # UI preferences: language, units, timezone, theme
     preferences: Mapped[dict | None] = mapped_column(JSON)
     # Notification toggles: riego, plagas, email, in_app

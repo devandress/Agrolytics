@@ -1,4 +1,4 @@
-"""Billing endpoints — per-hectare plan catalog + MercadoPago Checkout Pro.
+"""Billing endpoints — per-hectare plan catalog + MercadoPago Suscripciones.
 
 Real money moves ONLY when ``MERCADOPAGO_ACCESS_TOKEN`` is set. Without it every
 endpoint falls back to a labelled preview (no charge, no init_point) so local dev
@@ -6,11 +6,19 @@ and demos keep working. Use MercadoPago's TEST-... credentials
 (https://www.mercadopago.com.mx/developers/panel/app) for sandbox testing before
 ever putting a live APP_USR-... token in production.
 
-Flow: POST /checkout creates a MercadoPago Preference and returns its
-``init_point`` (a hosted checkout URL) — the frontend redirects the user there.
-MercadoPago calls POST /billing/webhook/mercadopago when the payment settles;
-that's the ONLY place a paid plan gets activated. /subscribe only handles the
-free plan (no payment involved) — it never grants a paid plan.
+Uses MercadoPago's recurring-subscription product (``/preapproval``, "Suscripciones"
+in their dashboard) rather than Checkout Pro's one-time preferences — the price is
+per hectare and billed monthly, so a subscription that renews itself is the right
+fit; Checkout Pro would make the customer manually re-pay every month.
+
+Flow: POST /checkout creates a preapproval and returns its ``init_point`` (a hosted
+authorization page) — the frontend redirects the user there. The FIRST charge
+happens at authorization; MercadoPago then bills automatically every month after.
+MercadoPago calls POST /billing/webhook/mercadopago on status changes — that's the
+ONLY place a paid plan gets granted, and it also downgrades the account back to
+free if the subscription is cancelled or paused (e.g. a card stops working).
+/subscribe only handles the free plan (no payment involved) — it never grants a
+paid plan. POST /cancel lets the user stop the subscription themselves.
 """
 
 import uuid
@@ -84,14 +92,17 @@ async def my_billing(current_user: CurrentUser, db: DBSession) -> dict[str, Any]
         },
         "price": price_mxn_for_ha(current_user.plan, ha),
         "note": PRICING_NOTE,
+        "has_subscription": bool(current_user.mercadopago_preapproval_id),
     }
 
 
 @router.post("/checkout")
 async def checkout(body: CheckoutBody, current_user: CurrentUser, db: DBSession) -> dict[str, Any]:
-    """Create a MercadoPago Checkout Pro preference for the Productor plan.
+    """Start a recurring MercadoPago subscription (preapproval) for the Productor plan.
 
     Free needs no payment; Enterprise is a manual quote — neither goes through here.
+    The first charge happens when the user authorizes on MercadoPago's page; every
+    month after that, MercadoPago bills the same amount automatically.
     """
     if body.plan != "pro":
         raise HTTPException(400, "Solo el plan Productor tiene cobro en línea. Explorador es gratis; "
@@ -103,33 +114,28 @@ async def checkout(body: CheckoutBody, current_user: CurrentUser, db: DBSession)
     if not settings.MERCADOPAGO_ACCESS_TOKEN:
         return {
             "preview": True,
-            "message": "Modo sandbox: sin MERCADOPAGO_ACCESS_TOKEN configurado, no se puede iniciar un cobro real todavía.",
+            "message": "Modo sandbox: sin MERCADOPAGO_ACCESS_TOKEN configurado, no se puede iniciar una suscripción real todavía.",
             "plan": body.plan,
             "amount_mxn": amount,
             "hectares": price.get("total_ha"),
         }
 
     payload = {
-        "items": [{
-            "title": f"Agrolytics Productor — {price.get('total_ha', 0)} ha",
-            "quantity": 1,
-            "currency_id": "MXN",
-            "unit_price": float(amount),
-        }],
-        "payer": {"email": current_user.email},
-        "back_urls": {
-            "success": f"{settings.PUBLIC_BASE_URL}/#/billing/success",
-            "failure": f"{settings.PUBLIC_BASE_URL}/#/billing/failure",
-            "pending": f"{settings.PUBLIC_BASE_URL}/#/billing/pending",
-        },
-        "auto_return": "approved",
-        "notification_url": f"{settings.PUBLIC_BASE_URL}/api/v1/billing/webhook/mercadopago",
+        "reason": f"Agrolytics Productor — {price.get('total_ha', 0)} ha",
         "external_reference": f"{current_user.id}:{body.plan}",
+        "payer_email": current_user.email,
+        "auto_recurring": {
+            "frequency": 1,
+            "frequency_type": "months",
+            "transaction_amount": float(amount),
+            "currency_id": "MXN",
+        },
+        "back_url": f"{settings.PUBLIC_BASE_URL}/",
     }
     headers = {"Authorization": f"Bearer {settings.MERCADOPAGO_ACCESS_TOKEN}", "Content-Type": "application/json"}
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(f"{_MP_API}/checkout/preferences", json=payload, headers=headers)
+            resp = await client.post(f"{_MP_API}/preapproval", json=payload, headers=headers)
         resp.raise_for_status()
         pref = resp.json()
     except httpx.HTTPStatusError as exc:
@@ -137,44 +143,73 @@ async def checkout(body: CheckoutBody, current_user: CurrentUser, db: DBSession)
     except Exception as exc:
         raise HTTPException(502, f"No se pudo conectar con MercadoPago: {exc}") from exc
 
+    current_user.mercadopago_preapproval_id = pref.get("id")
+    await db.commit()
+
     sandbox = settings.MERCADOPAGO_ACCESS_TOKEN.startswith("TEST-")
     return {
         "preview": False,
         "sandbox": sandbox,
-        "init_point": pref.get("sandbox_init_point") if sandbox else pref.get("init_point"),
-        "preference_id": pref.get("id"),
+        "init_point": pref.get("init_point"),
+        "preapproval_id": pref.get("id"),
         "amount_mxn": amount,
         "hectares": price.get("total_ha"),
     }
 
 
+@router.post("/cancel")
+async def cancel_subscription(current_user: CurrentUser, db: DBSession) -> dict[str, Any]:
+    """Cancel the user's own recurring subscription and downgrade to Explorador."""
+    if not current_user.mercadopago_preapproval_id:
+        raise HTTPException(400, "No tenés una suscripción activa para cancelar.")
+    if settings.MERCADOPAGO_ACCESS_TOKEN:
+        headers = {"Authorization": f"Bearer {settings.MERCADOPAGO_ACCESS_TOKEN}", "Content-Type": "application/json"}
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.put(
+                    f"{_MP_API}/preapproval/{current_user.mercadopago_preapproval_id}",
+                    json={"status": "cancelled"}, headers=headers,
+                )
+            resp.raise_for_status()
+        except Exception as exc:
+            raise HTTPException(502, f"No se pudo cancelar en MercadoPago: {exc}") from exc
+    current_user.plan = "free"
+    current_user.mercadopago_preapproval_id = None
+    await db.commit()
+    return {"plan": "free", "message": "Suscripción cancelada. Cambiaste al plan Explorador."}
+
+
 @router.post("/webhook/mercadopago", include_in_schema=False)
 async def mercadopago_webhook(request: Request, db: DBSession) -> dict[str, Any]:
-    """MercadoPago calls this after a payment settles. No auth — verify via the
-    payment lookup itself (MercadoPago's recommended pattern for Checkout Pro).
+    """MercadoPago calls this on subscription status changes. No auth — verify via
+    the preapproval lookup itself (MercadoPago's recommended pattern).
+
+    ``type=subscription_preapproval`` (or legacy ``topic=preapproval``) fires when a
+    subscription is created/authorized/cancelled/paused — that's what grants OR
+    revokes the paid plan. ``subscription_authorized_payment`` fires for each
+    recurring monthly charge; acknowledged but not acted on for now (the plan is
+    already active from the preapproval, and a failed recurring charge eventually
+    cancels/pauses the preapproval itself, which this same handler reacts to).
     """
     if not settings.MERCADOPAGO_ACCESS_TOKEN:
         return {"ok": False, "reason": "not configured"}
 
     params = request.query_params
     kind = params.get("type") or params.get("topic")  # legacy IPN uses "topic"
-    payment_id = params.get("data.id") or params.get("id")
-    if kind != "payment" or not payment_id:
+    entity_id = params.get("data.id") or params.get("id")
+    if kind not in ("subscription_preapproval", "preapproval") or not entity_id:
         return {"ok": True, "ignored": kind or "no-type"}
 
     headers = {"Authorization": f"Bearer {settings.MERCADOPAGO_ACCESS_TOKEN}"}
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(f"{_MP_API}/v1/payments/{payment_id}", headers=headers)
+            resp = await client.get(f"{_MP_API}/preapproval/{entity_id}", headers=headers)
         resp.raise_for_status()
-        payment = resp.json()
+        preapproval = resp.json()
     except Exception:
         return {"ok": False, "reason": "lookup failed"}
 
-    if payment.get("status") != "approved":
-        return {"ok": True, "status": payment.get("status")}
-
-    ref = payment.get("external_reference") or ""
+    ref = preapproval.get("external_reference") or ""
     if ":" not in ref:
         return {"ok": False, "reason": "bad external_reference"}
     user_id_str, plan = ref.split(":", 1)
@@ -189,20 +224,30 @@ async def mercadopago_webhook(request: Request, db: DBSession) -> dict[str, Any]
     user = result.scalar_one_or_none()
     if not user:
         return {"ok": False, "reason": "user not found"}
-    user.plan = plan
+
+    mp_status = preapproval.get("status")
+    if mp_status == "authorized":
+        user.plan = plan
+        user.mercadopago_preapproval_id = entity_id
+    elif mp_status in ("cancelled", "paused"):
+        # Card declined, user cancelled from MercadoPago's own UI, etc. — the
+        # subscription stopped paying, so the paid plan stops being granted.
+        user.plan = "free"
+        user.mercadopago_preapproval_id = None
     await db.commit()
-    return {"ok": True, "plan": plan}
+    return {"ok": True, "status": mp_status, "plan": user.plan}
 
 
 @router.post("/subscribe")
 async def subscribe(body: SubscribeBody, current_user: CurrentUser, db: DBSession) -> dict[str, Any]:
     """Switch to the free plan (no payment). Paid plans only activate via the
-    MercadoPago webhook after a real charge — this endpoint can't grant them.
+    MercadoPago webhook after a real subscription authorization — this endpoint
+    can't grant them.
     """
     if body.plan != "free":
         raise HTTPException(
             status_code=400,
-            detail="Para Productor usa /billing/checkout (pago real). Cooperativa se activa por contacto.",
+            detail="Para Productor usa /billing/checkout (suscripción real). Cooperativa se activa por contacto.",
         )
     current_user.plan = "free"
     await db.commit()

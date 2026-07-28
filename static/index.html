@@ -1852,7 +1852,8 @@ async function renderPlan(){
       <div class="card"><div class="card-title">Tu uso</div>
         <div style="font-size:.9rem">Plan actual: <b>${esc(me.plan.name)}</b> · ${u.hectares_used} ha${u.hectares_limit?` / ${u.hectares_limit} ha`:''} · ${u.fields_used} parcela(s)</div>
         ${u.hectares_limit?`<div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,Math.round(u.hectares_used/u.hectares_limit*100))}%;background:var(--green)"></div></div>`:''}
-        ${me.price&&me.price.mxn_month!=null?`<div style="font-size:.82rem;color:var(--muted);margin-top:.4rem">Precio de tu plan actual: <b style="color:var(--green)">$${me.price.mxn_month} MXN/mes</b></div>`:''}
+        ${me.price&&me.price.mxn_month!=null?`<div style="font-size:.82rem;color:var(--muted);margin-top:.4rem">Precio de tu plan actual: <b style="color:var(--green)">$${me.price.mxn_month} MXN/mes</b>${me.has_subscription?' · se renueva solo cada mes':''}</div>`:''}
+        ${me.has_subscription?'<button class="topbar-btn" style="margin-top:.6rem" onclick="cancelSubscription()">Cancelar suscripción</button>':''}
       </div>
       ${d.your_hectares>0&&pp.mxn_month!=null?`<div style="background:var(--green-pale);border:1px solid var(--green);border-radius:10px;padding:.8rem 1rem;font-size:.86rem;margin-top:.2rem">
         Con tus <b>${d.your_hectares} ha</b> actuales, el plan Productor te costaría <b style="color:var(--green)">$${pp.mxn_month} MXN/mes</b>${pp.at_minimum?' (mínimo de cuenta)':''}.
@@ -1875,23 +1876,32 @@ async function renderPlan(){
 async function downgradeToFree(){
   try{await api('/billing/subscribe',{method:'POST',body:JSON.stringify({plan:'free'})});user.plan='free';toast('Cambiaste a Explorador');renderPlan();}catch{toast('Error al cambiar de plan');}
 }
+async function cancelSubscription(){
+  if(!confirm('¿Cancelar tu suscripción? Volvés al plan Explorador y no se te cobra de nuevo.'))return;
+  try{
+    const r=await api('/billing/cancel',{method:'POST'});
+    const d=await r.json();
+    if(!r.ok){toast(d.detail||'No se pudo cancelar.');return;}
+    user.plan='free';toast(d.message);renderPlan();
+  }catch{toast('Error al cancelar.');}
+}
 async function choosePlan(planKey){
   const area=document.getElementById('checkout-area');
-  area.innerHTML='<div class="card" style="margin-top:.9rem"><div class="empty">Preparando pago…</div></div>';
+  area.innerHTML='<div class="card" style="margin-top:.9rem"><div class="empty">Preparando suscripción…</div></div>';
   area.scrollIntoView({behavior:'smooth'});
   try{
     const ck=await(await api('/billing/checkout',{method:'POST',body:JSON.stringify({plan:planKey,gateway:'mercadopago'})})).json();
     if(ck.preview){
-      area.innerHTML=`<div class="card"><div class="card-title">Pago vía MercadoPago <span class="preview-tag">SANDBOX · sin credenciales aún</span></div>
+      area.innerHTML=`<div class="card"><div class="card-title">Suscripción vía MercadoPago <span class="preview-tag">SANDBOX · sin credenciales aún</span></div>
         <p style="font-size:.85rem;color:var(--muted)">${esc(ck.message)}</p>
-        <p style="font-size:.9rem;margin-top:.5rem">Monto que se cobraría: <b>$${ck.amount_mxn} MXN/mes</b> (${ck.hectares??'—'} ha).</p></div>`;
+        <p style="font-size:.9rem;margin-top:.5rem">Monto que se cobraría cada mes: <b>$${ck.amount_mxn} MXN</b> (${ck.hectares??'—'} ha).</p></div>`;
       return;
     }
-    area.innerHTML=`<div class="card"><div class="card-title">Pago vía MercadoPago ${ck.sandbox?'<span class="preview-tag">MODO PRUEBA</span>':''}</div>
-      <p style="font-size:.9rem">Monto: <b>$${ck.amount_mxn} MXN/mes</b> (${ck.hectares??'—'} ha).</p>
-      <a class="save-btn" style="display:inline-block;text-decoration:none;margin-top:.6rem" href="${ck.init_point}" target="_blank" rel="noopener">Pagar con MercadoPago →</a>
-      <p style="font-size:.74rem;color:var(--muted);margin-top:.6rem">Te lleva al checkout seguro de MercadoPago. El plan se activa solo cuando el pago se confirme — no hace falta que vuelvas a esta pantalla.</p></div>`;
-  }catch{area.innerHTML='<div class="card"><div class="empty">No se pudo iniciar el pago.</div></div>';}
+    area.innerHTML=`<div class="card"><div class="card-title">Suscripción vía MercadoPago ${ck.sandbox?'<span class="preview-tag">MODO PRUEBA</span>':''}</div>
+      <p style="font-size:.9rem">Cobro mensual: <b>$${ck.amount_mxn} MXN/mes</b> (${ck.hectares??'—'} ha). Se renueva solo cada mes hasta que la canceles.</p>
+      <a class="save-btn" style="display:inline-block;text-decoration:none;margin-top:.6rem" href="${ck.init_point}" target="_blank" rel="noopener">Suscribirme con MercadoPago →</a>
+      <p style="font-size:.74rem;color:var(--muted);margin-top:.6rem">Te lleva a autorizar el cobro en MercadoPago. El plan se activa solo cuando lo confirmes ahí — no hace falta que vuelvas a esta pantalla.</p></div>`;
+  }catch{area.innerHTML='<div class="card"><div class="empty">No se pudo iniciar la suscripción.</div></div>';}
 }
 
 // ── PHOTO ──
