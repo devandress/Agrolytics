@@ -56,5 +56,9 @@ pytest==7.4.4
 pytest-asyncio==0.23.3
 pytest-mock==3.12.0
 
+# Static analysis (dev — see ruff.toml and mypy.ini)
+mypy==1.10.1
+ruff==0.5.5
+
 # Utilities
 python-dotenv==1.0.0

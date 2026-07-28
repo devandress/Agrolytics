@@ -1,4 +1,8 @@
-version: "3.9"
+name: agrovision  # pin the Compose project name so it matches already-running
+                   # containers/volumes (agrovision-*, agrovision_pgdata) after
+                   # the project folder was renamed to Agrolytics — Compose
+                   # would otherwise derive "agrolytics" from the new folder
+                   # name and orphan the running stack.
 
 services:
   db:

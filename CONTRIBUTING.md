@@ -76,7 +76,7 @@ app/
 black app/ tests/
 
 # Check types
-mypy app/ --strict
+mypy app
 
 # Lint
 ruff check app/ tests/
@@ -171,7 +171,7 @@ Closes #42"
 
 3. **Type check:**
    ```bash
-   mypy app/ --strict
+   mypy app
    ```
 
 4. **Run locally:**
