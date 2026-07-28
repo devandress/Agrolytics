@@ -57,13 +57,41 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .menu-btn{background:none;border:1px solid var(--border);border-radius:8px;color:var(--text2);padding:.35rem .6rem;cursor:pointer;font-size:1rem;display:none}
 @media(max-width:768px){.menu-btn{display:block}}
 
+/* Topbar: real lote/índice selectors — functional dropdowns, not a read-only badge. */
+.topbar-select{display:flex;align-items:center;gap:.4rem;background:var(--card2);border:1px solid var(--border);
+  border-radius:9px;padding:.35rem .7rem;color:var(--muted);max-width:210px}
+.topbar-select .ic{flex-shrink:0;color:var(--green)}
+.topbar-select select{border:none;background:none;outline:none;font-size:.82rem;font-weight:700;color:var(--text);
+  cursor:pointer;max-width:170px;text-overflow:ellipsis}
+@media(max-width:760px){.topbar-select{display:none!important}}
+
+/* Sidebar search — top of the ONE unified column (search, lotes, nav, profile). */
+.sidebar-search{display:flex;align-items:center;gap:.5rem;margin:.7rem .7rem .2rem;background:var(--card2);
+  border:1px solid var(--border);border-radius:9px;padding:.45rem .7rem;color:var(--muted)}
+.sidebar-search .ic{flex-shrink:0}
+.sidebar-search input{border:none;background:none;outline:none;font-size:.83rem;color:var(--text);width:100%;min-width:0}
+
+/* Sidebar footer — user profile, pinned under the nav rows. */
+.sidebar-user{display:flex;align-items:center;gap:.6rem;padding:.7rem;border-top:1px solid var(--line);
+  cursor:pointer;flex-shrink:0}
+.sidebar-user:hover{background:var(--card2)}
+.su-avatar{width:34px;height:34px;border-radius:50%;background:var(--green);color:#fff;font-weight:800;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.9rem}
+.su-info{min-width:0}
+.su-name{font-size:.83rem;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.su-role{font-size:.72rem;color:var(--muted)}
+
 .body-wrap{display:flex;flex:1;overflow:hidden}
 .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150}
 .overlay.on{display:block}
 
 /* SIDEBAR */
 .sidebar{width:248px;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
-.sidebar.hidden{display:none}
+/* Cross-field roles (Riego/Alertas/Reportes/...) hide the lotes list, but the
+   sidebar itself must stay — nav + profile now live inside it, not in a
+   separate rail, so hiding the whole thing would strand the user with no
+   way back to another view. */
+.sidebar.no-fields .sidebar-search,.sidebar.no-fields .sidebar-head,.sidebar.no-fields .fields-list{display:none}
 @media(max-width:768px){.sidebar{position:fixed;top:49px;left:0;bottom:0;z-index:200;transform:translateX(-100%);transition:transform .25s;box-shadow:4px 0 24px rgba(0,0,0,.2)}.sidebar.open{transform:translateX(0)}}
 .sidebar-head{padding:.85rem 1rem;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
 .sidebar-head span{font-size:.74rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
@@ -193,17 +221,15 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .raster-layer{image-rendering:pixelated;image-rendering:crisp-edges}
 .map-legend{background:linear-gradient(#ffffff,#f7faf8)}
 .map-legend>span{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.05)}
-/* Left icon rail (was a horizontal tab row in the topbar — moved so the map
-   gets the full remaining width instead of losing a strip to nav chrome). */
-.tabs{display:flex;flex-direction:column;align-items:center;gap:.25rem;width:64px;flex-shrink:0;
-  background:var(--card);border-right:1px solid var(--border);padding:.75rem .4rem;overflow-y:auto;scrollbar-width:none}
-.tab{border:none;background:transparent;padding:.5rem .3rem;font-size:.62rem;font-weight:700;color:var(--muted);
-  cursor:pointer;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:.25rem;white-space:nowrap;width:100%;line-height:1.1;text-align:center}
-.tab:hover{background:var(--card2);color:var(--text)}
-.tab.active{background:var(--green);color:#fff}
-.tab.active .ic{color:#fff}
-.tab .ic{color:var(--green);width:1.35em;height:1.35em}
+/* Nav rows, docked below the lotes list inside the ONE unified sidebar column
+   (icon + label, full width) — not a separate rail anymore. */
+.tabs{display:flex;flex-direction:column;gap:.15rem;flex-shrink:0;padding:.5rem;border-top:1px solid var(--line)}
+.tab{border:none;background:transparent;padding:.55rem .6rem;font-size:.84rem;font-weight:600;color:var(--text2);
+  cursor:pointer;border-radius:9px;display:flex;align-items:center;gap:.65rem;white-space:nowrap;width:100%;text-align:left}
+.tab:hover{background:var(--card2)}
+.tab.active{background:var(--green-pale);color:var(--green)}
+.tab.active .ic{color:var(--green)}
+.tab .ic{color:var(--muted);width:1.15em;height:1.15em;flex-shrink:0}
 /* WhatsApp contacts */
 .wa-contact{display:flex;align-items:center;gap:.7rem;padding:.6rem .8rem;border:1px solid var(--line);border-radius:10px;margin-bottom:.45rem;background:#fff}
 .wa-contact b{flex:1}
@@ -489,18 +515,38 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <div class="topbar">
     <button class="menu-btn" onclick="toggleSidebar()">☰</button>
     <div class="topbar-logo"><svg class="leaf" viewBox="0 0 24 24" fill="#2e7d32"><path d="M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66.95-2.3c.48.17.98.3 1.34.3C19 20 22 3 22 3c-1 2-8 2.25-13 3.25S2 11.5 2 13.5s1.75 3.75 1.75 3.75C7 8 17 8 17 8z"/></svg>Agrolytics</div>
+    <!-- Selector de lote real: siempre visible, cambia currentField sin importar la vista. -->
+    <label class="topbar-select" title="Lote">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21A8 8 0 0 1 4 13C4 7 9 3 20 3c0 9-5 13-11 13v5"/><path d="M8 17c2-4 5-6 9-7"/></svg>
+      <select id="topbar-field-select" onchange="pickFieldById(this.value)"><option>Sin lotes</option></select>
+    </label>
+    <!-- Selector de índice: solo tiene sentido con la vista Panel (mapa/análisis) abierta. -->
+    <label class="topbar-select" id="topbar-index-wrap" style="display:none" title="Índice espectral">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
+      <select id="an-index" onchange="setAnIndex(this.value)">
+        <option>NDVI</option><option>NDMI</option><option>NDRE</option><option>EVI</option><option>RIESGO</option></select>
+    </label>
     <div class="topbar-spacer"></div>
     <div class="topbar-user" id="top-email"></div>
     <button class="topbar-btn" onclick="doLogout()">Salir</button>
   </div>
 
   <div class="body-wrap">
-    <nav class="tabs" id="main-tabs"></nav>
     <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+    <!-- Sidebar unificado: buscador, lotes, navegación y perfil en una sola columna. -->
     <div class="sidebar" id="sidebar">
+      <div class="sidebar-search">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="field-search" type="text" placeholder="Buscar lotes…" oninput="renderSidebar()" onkeydown="if(event.key==='Escape'){this.value='';renderSidebar();this.blur()}">
+      </div>
       <div class="sidebar-head"><span id="fields-count">Campos</span>
         <button class="add-btn" onclick="wzStart('create')">+ Nuevo</button></div>
       <div class="fields-list" id="fields-list"><div class="empty">Cargando…</div></div>
+      <nav class="tabs" id="main-tabs"></nav>
+      <div class="sidebar-user" id="sidebar-user" style="display:none" onclick="setRole('cuenta')" title="Cuenta">
+        <div class="su-avatar" id="su-avatar"></div>
+        <div class="su-info"><div class="su-name" id="su-name"></div><div class="su-role">Productor</div></div>
+      </div>
     </div>
     <div class="content" id="content"></div>
   </div>
@@ -671,8 +717,20 @@ async function doResetPassword(){
 async function initApp(){
   const r=await api('/auth/me');if(!r.ok){token='';localStorage.removeItem('agv');return;}
   user=await r.json();document.getElementById('top-email').textContent=user.email;
+  updateSidebarUser();
   document.getElementById('login-screen').style.display='none';document.getElementById('app').classList.add('on');
   await loadFields();setRole(currentRole);
+}
+// Perfil al pie del sidebar unificado (nombre + rol + inicial como avatar).
+function updateSidebarUser(){
+  if(!user)return;
+  const box=document.getElementById('sidebar-user'),av=document.getElementById('su-avatar'),
+    nm=document.getElementById('su-name'),rl=document.querySelector('.su-role');
+  const label=user.full_name||user.email;
+  av.textContent=label.trim().charAt(0).toUpperCase();
+  nm.textContent=label;
+  if(rl)rl.textContent=user.role?user.role.charAt(0).toUpperCase()+user.role.slice(1):'Productor';
+  box.style.display='flex';
 }
 
 function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('overlay').classList.toggle('on');}
@@ -680,23 +738,39 @@ function closeSidebar(){document.getElementById('sidebar').classList.remove('ope
 
 async function loadFields(){
   try{const r=await api('/fields');allFields=await r.json();
-    document.getElementById('fields-count').textContent=`${allFields.length} campos`;renderSidebar();
     if(allFields.length&&!currentField)currentField=allFields[0];
+    document.getElementById('fields-count').textContent=`${allFields.length} campos`;renderSidebar();
   }catch{document.getElementById('fields-list').innerHTML='<div class="empty">Error</div>';}
 }
 function renderSidebar(){
   const el=document.getElementById('fields-list');
+  updateTopbarField();
   if(!allFields.length){el.innerHTML='<div class="empty">Sin campos.<br>Toca "+ Nuevo".</div>';return;}
-  el.innerHTML=allFields.map((f,i)=>`<div class="field-item${f.id===currentField?.id?' active':''}">
-    <div class="fi-body" onclick="pickField(${i})">
+  const q=(document.getElementById('field-search')?.value||'').trim().toLowerCase();
+  const list=q?allFields.filter(f=>f.name.toLowerCase().includes(q)):allFields;
+  if(!list.length){el.innerHTML=`<div class="empty">Sin lotes para "${esc(q)}".</div>`;return;}
+  el.innerHTML=list.map(f=>`<div class="field-item${f.id===currentField?.id?' active':''}">
+    <div class="fi-body" onclick="pickFieldById('${f.id}')">
       <div class="fi-name"><span class="fi-dot" style="background:${f.id===currentField?.id?'var(--green)':'#bcc8be'}"></span>${esc(f.name)}</div>
       <div class="fi-meta">${esc(f.crop_type||'Sin cultivo')} · ${f.area_ha?.toFixed(1)??'?'} ha</div></div>
     <button class="fi-del" title="Eliminar parcela" onclick="deleteField('${f.id}','${esc(f.name).replace(/'/g,"")}',event)">🗑</button></div>`).join('');
 }
-function pickField(i){currentField=allFields[i];renderSidebar();closeSidebar();
+// Sincroniza el <select> real de la topbar con allFields/currentField — se
+// llama cada vez que renderSidebar() corre, así nunca queda desactualizado.
+function updateTopbarField(){
+  const sel=document.getElementById('topbar-field-select');
+  if(!sel)return;
+  if(!allFields.length){sel.innerHTML='<option>Sin lotes</option>';sel.disabled=true;return;}
+  sel.disabled=false;
+  sel.innerHTML=allFields.map(f=>`<option value="${f.id}"${f.id===currentField?.id?' selected':''}>${esc(f.name)}</option>`).join('');
+}
+function pickFieldById(id){
+  const f=allFields.find(x=>x.id===id);if(!f)return;
+  currentField=f;renderSidebar();closeSidebar();
   if(currentRole==='analisis')renderAnalisis();
   else if(currentRole==='data')renderData();
-  else if(currentRole==='mayordomo'&&leafMap&&markers[currentField.id])markers[currentField.id].openPopup();}
+  else if(currentRole==='mayordomo'&&leafMap&&markers[currentField.id])markers[currentField.id].openPopup();
+}
 
 async function deleteField(id,name,ev){
   if(ev)ev.stopPropagation();
@@ -719,8 +793,11 @@ function setRole(role){
   currentRole=role;leafMap=null;markers={};renderTabs();
   if(_anPoll){clearInterval(_anPoll);_anPoll=null;}
   stopPrepPoll();
-  // Field-centric views keep the sidebar; cross-field role views hide it.
-  document.getElementById('sidebar').classList.toggle('hidden',!(role==='mayordomo'||role==='analisis'||role==='data'));closeSidebar();
+  // Field-centric views show the lotes list; cross-field roles hide just that
+  // part (nav + profile stay — they live inside the same sidebar column now).
+  document.getElementById('sidebar').classList.toggle('no-fields',!(role==='mayordomo'||role==='analisis'||role==='data'));closeSidebar();
+  // The índice selector in the topbar only makes sense with the map/Panel view open.
+  document.getElementById('topbar-index-wrap').style.display=role==='analisis'?'flex':'none';
   ({analisis:renderAnalisis,data:renderData,duenio:renderDuenio,mayordomo:renderMayordomo,regador:renderRegador,agronomo:renderAgronomo,trabajador:renderTrabajador,cuenta:renderCuenta,plan:renderPlan,notif:renderNotif,reportes:renderReportes,whatsapp:renderWhatsApp}[role])();
 }
 
@@ -938,11 +1015,11 @@ const ICONS={
   drop2:'<path d="M12 3s6 6.6 6 10.5a6 6 0 0 1-12 0C6 9.6 12 3 12 3z"/><path d="M12 17a3.5 3.5 0 0 1-3.5-3.5"/>',
   card:'<rect x="2.5" y="5.5" width="19" height="13" rx="2"/><path d="M2.5 10h19"/><path d="M6 14.5h4"/>',
 };
-const TABS=[['analisis','Panel','leaf'],['mayordomo','Tareas','pins'],['regador','Riego','water'],['notif','Alertas','bell'],['reportes','Reportes','doc'],['whatsapp','WhatsApp','wa'],['plan','Plan','card'],['cuenta','','gear']];
+const TABS=[['analisis','Panel','leaf'],['mayordomo','Tareas','pins'],['regador','Riego','water'],['notif','Alertas','bell'],['reportes','Reportes','doc'],['whatsapp','WhatsApp','wa'],['plan','Plan','card'],['cuenta','Configuración','gear']];
 function renderTabs(){
   const el=document.getElementById('main-tabs');if(!el)return;
   el.innerHTML=TABS.map(([v,label,icon])=>
-    `<button class="tab ${currentRole===v?'active':''}" onclick="setRole('${v}')" title="${label||'Configuración'}">${ic(icon)}${label?` ${label}`:''}</button>`).join('');
+    `<button class="tab ${currentRole===v?'active':''}" onclick="setRole('${v}')" title="${label}">${ic(icon)}<span>${label}</span></button>`).join('');
 }
 function ic(n){return `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]||''}</svg>`;}
 // What the current raster measures (shown above the map).
@@ -1269,9 +1346,6 @@ async function renderAnalisis(){
           <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">
             <span><b>Mapa · ${analysisIndex}</b> <span style="color:var(--muted);font-weight:400">— ${mapMeaning(analysisIndex)}</span></span>
             <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
-              <label class="map-ctl">Capa
-                <select id="an-index" onchange="setAnIndex(this.value)">
-                  <option>NDVI</option><option>NDMI</option><option>NDRE</option><option>EVI</option><option>RIESGO</option></select></label>
               <button class="add-btn" type="button" onclick="anRefreshData()" title="Descargar / actualizar fechas satelitales">⟳ Cargar</button>
             </div>
           </div>
