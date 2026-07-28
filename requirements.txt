@@ -39,7 +39,7 @@ pystac-client==0.7.5
 planetary-computer==1.0.0
 
 # HTTP
-httpx==0.26.0
+httpx==0.28.1
 
 # Logging
 loguru==0.7.2
