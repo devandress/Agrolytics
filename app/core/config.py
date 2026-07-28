@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
     # Per-IP rate limit for auth endpoints (slowapi syntax, e.g. "5/minute").
     AUTH_RATE_LIMIT: str = "5/minute"
+    # Per-IP rate limit for AI endpoints (DeepSeek chat + task proposals) — the
+    # actual per-plan monthly quota (PLANS[...]["ai_monthly"]) isn't metered yet,
+    # this is just a floor against runaway loops / abuse driving up token cost.
+    AI_RATE_LIMIT: str = "20/hour"
     # Hide interactive API docs (/docs, /redoc) when running in production.
     DOCS_ENABLED: bool = True
 

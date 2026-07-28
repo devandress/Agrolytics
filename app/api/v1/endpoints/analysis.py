@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 import numpy as np
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 from geoalchemy2.functions import ST_AsGeoJSON, ST_AsText, ST_Centroid
 from pydantic import BaseModel
@@ -22,6 +22,7 @@ from sqlalchemy import and_, select
 
 from app.api.deps import AiUser, CurrentUser, DBSession
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.models.field import Field
 from app.models.field_task import FieldTask
 from app.models.index import Index
@@ -491,11 +492,12 @@ async def phenology(field_id: uuid.UUID, current_user: CurrentUser, db: DBSessio
 
 
 @router.post("/{field_id}/tasks/propose")
-async def propose_field_tasks(field_id: uuid.UUID, current_user: AiUser, db: DBSession,
+@limiter.limit(settings.AI_RATE_LIMIT)
+async def propose_field_tasks(request: Request, field_id: uuid.UUID, current_user: AiUser, db: DBSession,
                               body: ProposeBody | None = None) -> dict[str, Any]:
     """Chat-driven: propose (not save) tasks from real data + optional conversation.
 
-    Gated to plans that include AI (Free has no AI → HTTP 402).
+    Gated to plans that include AI (Free has no AI → HTTP 402) and rate-limited per IP.
     """
     r = await db.execute(select(Field).where(Field.id == field_id, Field.user_id == current_user.id))
     field = r.scalar_one_or_none()

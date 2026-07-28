@@ -1,12 +1,13 @@
 """DeepSeek-powered agronomic chatbot endpoint."""
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.api.deps import AiUser, CurrentUser
 from app.core.config import settings
+from app.core.limiter import limiter
 
 router = APIRouter()
 
@@ -38,13 +39,16 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/chat")
+@limiter.limit(settings.AI_RATE_LIMIT)
 async def chat(
+    request: Request,
     payload: ChatRequest,
     current_user: AiUser,
 ):
     """Proxy to DeepSeek with agronomic system prompt and optional field context.
 
-    Gated to plans that include AI (Free → HTTP 402)."""
+    Gated to plans that include AI (Free → HTTP 402) and rate-limited per IP —
+    this is a cost floor, not the real per-plan monthly quota (not metered yet)."""
     if not settings.DEEPSEEK_API_KEY:
         raise HTTPException(503, "Chatbot not configured (missing API key).")
 
