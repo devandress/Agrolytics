@@ -50,6 +50,20 @@ class ChangePassword(BaseModel):
         return _validate_password(v)
 
 
+class ForgotPassword(BaseModel):
+    email: EmailStr
+
+
+class ResetPassword(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def strong(cls, v: str) -> str:
+        return _validate_password(v)
+
+
 class UserUpdate(BaseModel):
     """Self-service profile/preferences update."""
     full_name: str | None = None

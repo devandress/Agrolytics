@@ -47,6 +47,16 @@ def create_refresh_token(subject: str) -> str:
     )
 
 
+def create_password_reset_token(subject: str) -> str:
+    """Short-lived, single-purpose token for the forgot-password flow.
+
+    Deliberately short (30 min) and its own ``type`` so it can never be reused
+    as an access/refresh token even if leaked, and gets revoked (blocklisted by
+    jti) the moment it's consumed — see auth.reset_password.
+    """
+    return _create_token({"sub": subject, "type": "password_reset"}, timedelta(minutes=30))
+
+
 def decode_token(token: str) -> dict[str, Any]:
     """Decode and validate JWT token; raises JWTError if invalid or expired."""
     return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])

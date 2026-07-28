@@ -66,8 +66,18 @@ class Settings(BaseSettings):
     # switch to live APP_USR-... credentials only when ready to charge for real.
     MERCADOPAGO_ACCESS_TOKEN: str = ""
     MERCADOPAGO_PUBLIC_KEY: str = ""
-    # Public origin used to build MercadoPago back_urls + webhook notification_url.
+    # Public origin used to build MercadoPago back_urls + webhook notification_url,
+    # and password-reset links.
     PUBLIC_BASE_URL: str = "http://localhost:8001"
+
+    # ── Transactional email (password reset). Empty host = no-op: the reset link
+    # is logged instead of emailed (loud, not silent) — fine for local dev, not
+    # for production. Any SMTP provider works (SES, Resend's SMTP endpoint, etc).
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "Agrolytics <no-reply@agrolytics.app>"
 
     # Application environment: development | staging | production
     APP_ENV: str = "development"

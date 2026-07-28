@@ -1,5 +1,6 @@
 """Authentication endpoints: register, login, refresh, logout."""
 
+import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -9,9 +10,10 @@ from sqlalchemy import select
 from app.api.deps import CurrentUser, DBSession, oauth2_scheme
 from app.core.config import settings
 from app.core.limiter import limiter
-from app.core.redis_client import revoke_jti
+from app.core.redis_client import is_jti_revoked, revoke_jti
 from app.core.security import (
     create_access_token,
+    create_password_reset_token,
     create_refresh_token,
     decode_token,
     hash_password,
@@ -19,7 +21,16 @@ from app.core.security import (
 )
 from app.models.user import User
 from app.schemas.token import Token, TokenRefresh
-from app.schemas.user import ChangePassword, UserCreate, UserLogin, UserOut, UserUpdate
+from app.schemas.user import (
+    ChangePassword,
+    ForgotPassword,
+    ResetPassword,
+    UserCreate,
+    UserLogin,
+    UserOut,
+    UserUpdate,
+)
+from app.services.email import send_password_reset_email
 
 router = APIRouter()
 
@@ -125,6 +136,57 @@ async def change_password(
     current_user.hashed_password = hash_password(payload.new_password)
     await db.commit()
     return {"detail": "Contraseña actualizada."}
+
+
+@router.post("/forgot-password", status_code=status.HTTP_200_OK)
+@limiter.limit(settings.AUTH_RATE_LIMIT)
+async def forgot_password(request: Request, payload: ForgotPassword, db: DBSession) -> dict:
+    """Request a password reset link. Always returns the same generic message —
+    never reveals whether the email is registered (enumeration protection)."""
+    generic = {"detail": "Si el correo existe, te enviamos un enlace para restablecer tu contraseña."}
+    result = await db.execute(select(User).where(User.email == payload.email))
+    user = result.scalar_one_or_none()
+    if not user:
+        return generic
+
+    token = create_password_reset_token(str(user.id))
+    reset_link = f"{settings.PUBLIC_BASE_URL}/?reset_token={token}"
+    send_password_reset_email(user.email, reset_link)
+    return generic
+
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+@limiter.limit(settings.AUTH_RATE_LIMIT)
+async def reset_password(request: Request, payload: ResetPassword, db: DBSession) -> dict:
+    """Consume a password-reset token (from the emailed link) and set a new password."""
+    invalid = HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Enlace inválido o vencido. Solicita uno nuevo.")
+    try:
+        data = decode_token(payload.token)
+    except JWTError:
+        raise invalid from None
+    if data.get("type") != "password_reset":
+        raise invalid
+    jti = data.get("jti")
+    if jti and await is_jti_revoked(jti):
+        raise invalid  # already used
+
+    try:
+        user_id = uuid.UUID(str(data.get("sub")))
+    except ValueError:
+        raise invalid from None
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise invalid
+
+    user.hashed_password = hash_password(payload.new_password)
+    await db.commit()
+
+    if jti and data.get("exp"):
+        ttl = int(data["exp"] - datetime.now(UTC).timestamp())
+        await revoke_jti(jti, ttl)  # single-use: can't replay this link
+    return {"detail": "Contraseña actualizada. Ya podés iniciar sesión."}
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
