@@ -205,6 +205,46 @@ Postgres URL and the async (`+asyncpg`) URL is derived automatically in
 single service, so for multi-service raster serving switch `DATA_DIR` to S3-compatible
 object storage (`S3_BUCKET`). See `render.yaml` comments.
 
+### Dataset de demostración (opcional)
+
+Un deploy nuevo arranca vacío: en el plan free no corre ningún worker Celery, así
+que la ingesta satelital nunca se dispara y todas las gráficas salen en blanco.
+`app/seed_demo.py` llena ese hueco con una cuenta, cuatro parcelas del Salinas
+Valley, ~400 días de historia NDVI/NDMI/NDRE/EVI y una lista de tareas.
+
+**Los valores son sintéticos**, generados desde el propio modelo de fenología del
+proyecto (`app/services/phenology.py`) para que las curvas concuerden con lo que
+esperan los endpoints de fenología, pilares y tareas. No son mediciones y no
+deben presentarse como datos observados.
+
+Variables (dashboard de Render):
+
+| Variable | Requerida | Default | Para qué |
+|---|---|---|---|
+| `SEED_DEMO` | sí | `false` | `true` corre el seed en el boot |
+| `DEMO_PASSWORD` | sí | — | Contraseña de la cuenta demo. Mínimo 12 caracteres; sin ella el seed aborta en vez de inventar una |
+| `DEMO_EMAIL` | no | `demo@agrolytics.app` | Email de la cuenta |
+| `DEMO_PLAN` | no | `pro` | El plan `free` limita a 1 parcela y solo NDVI/NDMI |
+| `DEMO_FULL_NAME` | no | `Rancho San Miguel` | Nombre mostrado |
+
+En el plan free **dejá `SEED_DEMO=true` de forma permanente**: `DATA_DIR` es
+efímero, así que los `.tif` detrás de las capas del mapa se pierden en cada
+deploy o restart mientras las filas de `indices` que los referencian sobreviven.
+El seed es idempotente y los reescribe en cada arranque sin duplicar filas.
+
+Para correrlo a mano:
+
+```bash
+docker-compose exec -e DEMO_PASSWORD=<contraseña> api python -m app.seed_demo
+```
+
+Para borrarlo (el `ON DELETE CASCADE` se lleva parcelas, índices y tareas):
+
+```bash
+docker-compose exec db psql -U postgres agrolytics \
+  -c "DELETE FROM users WHERE email='demo@agrolytics.app';"
+```
+
 ### Production hardening (built in)
 
 The following are now enforced/available in code:

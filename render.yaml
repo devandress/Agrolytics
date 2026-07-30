@@ -70,6 +70,11 @@ services:
       - key: CORS_ORIGINS            # ajustar tras el primer deploy si Render
                                      # añade sufijo aleatorio al subdominio.
         value: https://agrolytics-api.onrender.com
+      - key: SEED_DEMO               # "true" siembra el dataset de demostración al
+        sync: false                  # boot. En free DEBE quedar en true: DATA_DIR es
+                                     # efímero y los rásters se reescriben cada deploy.
+      - key: DEMO_PASSWORD           # contraseña de la cuenta demo — set en dashboard.
+        sync: false                  # Sin esto el seed aborta (no inventa credencial).
       - key: DEEPSEEK_API_KEY        # set in dashboard (secret)
         sync: false
       - key: SENTRY_DSN              # optional error tracking; set in dashboard
