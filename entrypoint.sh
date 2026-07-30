@@ -24,6 +24,16 @@ if [ -n "$DATABASE_URL_SYNC" ] && [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
         echo "Initializing database with test user (non-production)..."
         python -m app.init_db
     fi
+
+    # Opt-in demonstration dataset (synthetic fields + spectral history + tasks).
+    # Off unless SEED_DEMO=true. Safe to leave on: the seed is idempotent, and it
+    # must stay on for a free-tier deploy because DATA_DIR is ephemeral there —
+    # the raster files behind the map layers are rewritten on every boot.
+    # Requires DEMO_PASSWORD; the seed aborts rather than invent a credential.
+    if [ "${SEED_DEMO:-false}" = "true" ]; then
+        echo "Seeding demonstration dataset..."
+        python -m app.seed_demo
+    fi
 fi
 
 exec "$@"

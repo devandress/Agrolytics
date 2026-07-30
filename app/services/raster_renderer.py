@@ -119,13 +119,23 @@ def _ndvi_colormap(data: np.ndarray, opacity: int = 210, lo: float = 0.0, hi: fl
     valid = np.isfinite(data) & (data != 0.0)
     v = np.clip((data - lo) / (hi - lo + 1e-9), 0.0, 1.0)
 
-    # Red high at low v, fading by mid-scale; green rising to mid-scale.
-    r = np.clip(255 * (1.0 - v / 0.5), 0, 255).astype(np.uint8)
-    g = np.clip(255 * v / 0.5, 0, 210).astype(np.uint8)
-    b = np.full((h, w), 30, dtype=np.uint8)
-
-    rgba[:, :, 0] = np.where(valid, r, 0)
-    rgba[:, :, 1] = np.where(valid, g, 0)
-    rgba[:, :, 2] = np.where(valid, b, 0)
+    # Three-stop red → yellow → green ramp. The previous two-stop version clamped
+    # red to 0 and green to 210 by mid-scale, so every value in the upper half of
+    # the range rendered as the same flat green — hiding exactly the in-field
+    # variation these layers exist to show on a healthy crop.
+    stops = (
+        np.array([215.0, 48.0, 39.0]),    # low  — red
+        np.array([255.0, 255.0, 191.0]),  # mid  — pale yellow
+        np.array([26.0, 152.0, 80.0]),    # high — green
+    )
+    lower = v < 0.5
+    t = np.where(lower, v / 0.5, (v - 0.5) / 0.5)
+    for c in range(3):
+        chan = np.where(
+            lower,
+            stops[0][c] + (stops[1][c] - stops[0][c]) * t,
+            stops[1][c] + (stops[2][c] - stops[1][c]) * t,
+        )
+        rgba[:, :, c] = np.where(valid, np.clip(chan, 0, 255).astype(np.uint8), 0)
     rgba[:, :, 3] = np.where(valid, opacity, 0)
     return rgba
