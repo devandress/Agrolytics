@@ -11,17 +11,18 @@ from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, DBSession
+from app.api.deps import AdminUser, CurrentUser, DBSession
 from app.core.config import settings
 from app.core.demo_data import financial_summary
 from app.models.field import Field
 from app.models.field_photo import FieldPhoto
 from app.models.field_task import FieldTask
 from app.models.index import Index
-from app.schemas.task import PhotoOut, TaskOut, TaskWithFieldOut
+from app.schemas.task import PhotoLabelIn, PhotoOut, PhotoReviewIn, TaskOut, TaskWithFieldOut
 from app.services.ai_tasks import generate_ai_tasks_for_user
 from app.services.pest_risk import pest_risk
 from app.services.ranch_health import ranch_overview
@@ -76,8 +77,9 @@ async def list_tasks(
 
 
 @router.post("/tasks/generate")
-async def generate_tasks(current_user: CurrentUser, db: DBSession,
-                         use_ai: bool = Query(True)) -> dict[str, Any]:
+async def generate_tasks(
+    current_user: CurrentUser, db: DBSession, use_ai: bool = Query(True)
+) -> dict[str, Any]:
     """(Re)generate tasks from the latest *real* indices.
 
     With ``use_ai`` (default) DeepSeek proposes tasks from the observed data and
@@ -87,11 +89,22 @@ async def generate_tasks(current_user: CurrentUser, db: DBSession,
     if use_ai:
         res = await generate_ai_tasks_for_user(db, current_user.id)
         src = "IA" if res["source"] == "ia" else "reglas"
-        return {"created": res["created"], "source": res["source"],
-                "message": f"Se generaron {res['created']} tarea(s) ({src})."}
+        return {
+            "created": res["created"],
+            "source": res["source"],
+            "tasks": res["tasks"],
+            "message": f"Se generaron {res['created']} tarea(s) ({src}).",
+        }
     created = await generate_tasks_for_user(db, current_user.id)
-    return {"created": created, "source": "reglas",
-            "message": f"Se generaron {created} tarea(s) (reglas)."}
+    # The deterministic-rules-only path doesn't track per-task photo_priority detail
+    # (generate_tasks_for_user only returns a count) — kept as an empty list for
+    # response-shape compatibility with the use_ai=True path.
+    return {
+        "created": created,
+        "source": "reglas",
+        "tasks": [],
+        "message": f"Se generaron {created} tarea(s) (reglas).",
+    }
 
 
 @router.post("/tasks/{task_id}/complete", response_model=TaskOut)
@@ -118,39 +131,69 @@ async def complete_task(task_id: uuid.UUID, current_user: CurrentUser, db: DBSes
 async def irrigation_schedule(current_user: CurrentUser, db: DBSession) -> dict[str, Any]:
     """Irrigation tasks + per-field moisture (NDMI/RVI) + demo water budget."""
     # Pending irrigation tasks across fields
-    rows = (await db.execute(
-        select(FieldTask, Field.name)
-        .join(Field, FieldTask.field_id == Field.id)
-        .where(Field.user_id == current_user.id, FieldTask.task_type == "riego",
-               FieldTask.status == "pendiente")
-        .order_by(FieldTask.priority.asc())
-    )).all()
-    schedule = [{
-        "task_id": str(t.id), "field_id": str(t.field_id), "field_name": fname,
-        "title": t.title, "amount": t.recommended_value, "priority": t.priority, "zone": t.zone,
-    } for t, fname in rows]
+    rows = (
+        await db.execute(
+            select(FieldTask, Field.name)
+            .join(Field, FieldTask.field_id == Field.id)
+            .where(
+                Field.user_id == current_user.id,
+                FieldTask.task_type == "riego",
+                FieldTask.status == "pendiente",
+            )
+            .order_by(FieldTask.priority.asc())
+        )
+    ).all()
+    schedule = [
+        {
+            "task_id": str(t.id),
+            "field_id": str(t.field_id),
+            "field_name": fname,
+            "title": t.title,
+            "amount": t.recommended_value,
+            "priority": t.priority,
+            "zone": t.zone,
+        }
+        for t, fname in rows
+    ]
 
     # Per-field moisture proxy (latest NDMI + radar RVI)
     fields = (await db.execute(select(Field).where(Field.user_id == current_user.id))).scalars().all()
     moisture = []
     for f in fields:
-        ndmi = (await db.execute(
-            select(Index.mean_value).where(Index.field_id == f.id, Index.index_type == "NDMI",
-                                            Index.mean_value.isnot(None))
-            .order_by(Index.date.desc()).limit(1))).scalar_one_or_none()
-        rvi = (await db.execute(
-            select(Index.mean_value).where(Index.field_id == f.id, Index.index_type == "RVI",
-                                            Index.mean_value.isnot(None))
-            .order_by(Index.date.desc()).limit(1))).scalar_one_or_none()
+        ndmi = (
+            await db.execute(
+                select(Index.mean_value)
+                .where(Index.field_id == f.id, Index.index_type == "NDMI", Index.mean_value.isnot(None))
+                .order_by(Index.date.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        rvi = (
+            await db.execute(
+                select(Index.mean_value)
+                .where(Index.field_id == f.id, Index.index_type == "RVI", Index.mean_value.isnot(None))
+                .order_by(Index.date.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
         # Moisture % proxy from NDMI (-1..1 → 0..100)
         pct = None if ndmi is None else max(0, min(100, round((ndmi + 0.2) / 0.8 * 100)))
-        moisture.append({
-            "field_id": str(f.id), "name": f.name, "ndmi": round(ndmi, 3) if ndmi is not None else None,
-            "rvi": round(rvi, 3) if rvi is not None else None, "moisture_pct": pct,
-        })
+        moisture.append(
+            {
+                "field_id": str(f.id),
+                "name": f.name,
+                "ndmi": round(ndmi, 3) if ndmi is not None else None,
+                "rvi": round(rvi, 3) if rvi is not None else None,
+                "moisture_pct": pct,
+            }
+        )
 
-    return {"schedule": schedule, "moisture": moisture, "water_budget": financial_summary()["sgma"],
-            "is_demo": True}
+    return {
+        "schedule": schedule,
+        "moisture": moisture,
+        "water_budget": financial_summary()["sgma"],
+        "is_demo": True,
+    }
 
 
 # ══════════════ AGRÓNOMO ══════════════
@@ -160,22 +203,38 @@ async def get_portfolio(current_user: CurrentUser, db: DBSession) -> dict[str, A
     fields = (await db.execute(select(Field).where(Field.user_id == current_user.id))).scalars().all()
     items = []
     for f in fields:
-        ndmi = (await db.execute(
-            select(Index.mean_value).where(Index.field_id == f.id, Index.index_type == "NDMI",
-                                            Index.mean_value.isnot(None))
-            .order_by(Index.date.desc()).limit(1))).scalar_one_or_none()
-        ndvi = (await db.execute(
-            select(Index.mean_value).where(Index.field_id == f.id, Index.index_type == "NDVI",
-                                            Index.mean_value.isnot(None))
-            .order_by(Index.date.desc()).limit(1))).scalar_one_or_none()
-        open_tasks = (await db.execute(
-            select(FieldTask.id).where(FieldTask.field_id == f.id, FieldTask.status == "pendiente"))).all()
-        items.append({
-            "field_id": str(f.id), "name": f.name, "crop_type": f.crop_type, "area_ha": f.area_ha,
-            "ndvi": round(ndvi, 3) if ndvi is not None else None,
-            "open_tasks": len(open_tasks),
-            "pest_risk": pest_risk(f.crop_type, float(ndmi) if ndmi is not None else None),
-        })
+        ndmi = (
+            await db.execute(
+                select(Index.mean_value)
+                .where(Index.field_id == f.id, Index.index_type == "NDMI", Index.mean_value.isnot(None))
+                .order_by(Index.date.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        ndvi = (
+            await db.execute(
+                select(Index.mean_value)
+                .where(Index.field_id == f.id, Index.index_type == "NDVI", Index.mean_value.isnot(None))
+                .order_by(Index.date.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        open_tasks = (
+            await db.execute(
+                select(FieldTask.id).where(FieldTask.field_id == f.id, FieldTask.status == "pendiente")
+            )
+        ).all()
+        items.append(
+            {
+                "field_id": str(f.id),
+                "name": f.name,
+                "crop_type": f.crop_type,
+                "area_ha": f.area_ha,
+                "ndvi": round(ndvi, 3) if ndvi is not None else None,
+                "open_tasks": len(open_tasks),
+                "pest_risk": pest_risk(f.crop_type, float(ndmi) if ndmi is not None else None),
+            }
+        )
     return {"fields": items, "total": len(items)}
 
 
@@ -191,17 +250,37 @@ async def data_bundle(current_user: CurrentUser, db: DBSession) -> dict[str, Any
     bundle = []
     total = 0
     for f in fields:
-        rows = (await db.execute(
-            select(Index.date, Index.index_type, Index.mean_value, Index.extra_meta)
-            .where(Index.field_id == f.id, Index.mean_value.isnot(None)))).all()
-        obs = [{"date": str(d), "index": it, "value": round(v, 5),
-                "sensor": (m or {}).get("sensor", "s2")} for d, it, v, m in rows]
+        rows = (
+            await db.execute(
+                select(Index.date, Index.index_type, Index.mean_value, Index.extra_meta).where(
+                    Index.field_id == f.id, Index.mean_value.isnot(None)
+                )
+            )
+        ).all()
+        obs = [
+            {"date": str(d), "index": it, "value": round(v, 5), "sensor": (m or {}).get("sensor", "s2")}
+            for d, it, v, m in rows
+        ]
         total += len(obs)
-        bundle.append({"field_id": str(f.id), "name": f.name, "crop_type": f.crop_type,
-                       "context": f.context, "planting_date": str(f.planting_date) if f.planting_date else None,
-                       "n_obs": len(obs), "observations": obs})
-    return {"ranch_owner": str(current_user.id), "fields": len(fields), "total_observations": total,
-            "schema_version": "1.0", "destination": "cloud-fusion (pendiente)", "bundle": bundle}
+        bundle.append(
+            {
+                "field_id": str(f.id),
+                "name": f.name,
+                "crop_type": f.crop_type,
+                "context": f.context,
+                "planting_date": str(f.planting_date) if f.planting_date else None,
+                "n_obs": len(obs),
+                "observations": obs,
+            }
+        )
+    return {
+        "ranch_owner": str(current_user.id),
+        "fields": len(fields),
+        "total_observations": total,
+        "schema_version": "1.0",
+        "destination": "cloud-fusion (pendiente)",
+        "bundle": bundle,
+    }
 
 
 # ══════════════ FOTOS (validación de campo) ══════════════
@@ -228,8 +307,15 @@ async def upload_photo(
     dest.write_bytes(await file.read())
 
     photo = FieldPhoto(
-        id=photo_id, field_id=field_id, task_id=task_id, user_id=current_user.id,
-        file_path=str(dest), caption=caption, alert_confirmed=alert_confirmed, lat=lat, lon=lon,
+        id=photo_id,
+        field_id=field_id,
+        task_id=task_id,
+        user_id=current_user.id,
+        file_path=str(dest),
+        caption=caption,
+        alert_confirmed=alert_confirmed,
+        lat=lat,
+        lon=lon,
     )
     db.add(photo)
     await db.commit()
@@ -242,9 +328,17 @@ async def upload_photo(
 @router.get("/fields/{field_id}/photos", response_model=list[PhotoOut])
 async def list_photos(field_id: uuid.UUID, current_user: CurrentUser, db: DBSession) -> list[PhotoOut]:
     await _owned_field(db, field_id, current_user.id)
-    rows = (await db.execute(
-        select(FieldPhoto).where(FieldPhoto.field_id == field_id)
-        .order_by(FieldPhoto.created_at.desc()))).scalars().all()
+    rows = (
+        (
+            await db.execute(
+                select(FieldPhoto)
+                .where(FieldPhoto.field_id == field_id)
+                .order_by(FieldPhoto.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     out = []
     for p in rows:
         item = PhotoOut.model_validate(p)
@@ -258,9 +352,74 @@ async def get_photo_file(
     field_id: uuid.UUID, photo_id: uuid.UUID, current_user: CurrentUser, db: DBSession
 ) -> FileResponse:
     await _owned_field(db, field_id, current_user.id)
-    r = await db.execute(
-        select(FieldPhoto).where(FieldPhoto.id == photo_id, FieldPhoto.field_id == field_id))
+    r = await db.execute(select(FieldPhoto).where(FieldPhoto.id == photo_id, FieldPhoto.field_id == field_id))
     photo = r.scalar_one_or_none()
     if not photo or not Path(photo.file_path).exists():
         raise HTTPException(status_code=404, detail="Foto no encontrada.")
     return FileResponse(photo.file_path)
+
+
+@router.patch("/fields/{field_id}/photos/{photo_id}/label", response_model=PhotoOut)
+async def label_photo(
+    field_id: uuid.UUID,
+    photo_id: uuid.UUID,
+    body: PhotoLabelIn,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> PhotoOut:
+    """Ground-truth label for a field photo — the mobile "Nuevo reporte" flow IS the
+    labeling tool (Active Learning Fase 0, see docs/ACTIVE_LEARNING.md §3). Non-farmer
+    label sources are admin-only for now (no dedicated agronomist role yet). Re-labeling
+    a previously-audited photo clears the stale review trail.
+    """
+    await _owned_field(db, field_id, current_user.id)
+    r = await db.execute(select(FieldPhoto).where(FieldPhoto.id == photo_id, FieldPhoto.field_id == field_id))
+    photo = r.scalar_one_or_none()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Foto no encontrada.")
+    if body.label_source != "farmer" and current_user.role != "admin":
+        raise HTTPException(
+            status_code=403, detail="Solo un administrador puede etiquetar como agrónomo/modelo."
+        )
+    if photo.reviewed_at is not None:
+        photo.reviewed_by = None
+        photo.reviewed_at = None
+    photo.pest_key = body.pest_key
+    photo.severity = body.severity
+    photo.label_source = body.label_source
+    await db.commit()
+    await db.refresh(photo)
+    out = PhotoOut.model_validate(photo)
+    out.url = f"/api/v1/fields/{field_id}/photos/{photo.id}/file"
+    return out
+
+
+@router.post("/photos/review-queue/{photo_id}", response_model=PhotoOut)
+async def review_photo(
+    photo_id: uuid.UUID,
+    body: PhotoReviewIn,
+    admin: AdminUser,
+    db: DBSession,
+) -> PhotoOut:
+    """Agronomist/staff audit of a farmer-labelled photo — feeds the farmer-vs-agrónomo
+    agreement rate (docs/ACTIVE_LEARNING.md §3/§8). Deliberately NOT owner-scoped: this
+    crosses users on purpose (a cross-ranch quality audit, not a farmer action).
+    """
+    r = await db.execute(select(FieldPhoto).where(FieldPhoto.id == photo_id))
+    photo = r.scalar_one_or_none()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Foto no encontrada.")
+    logger.info(f"Photo {photo_id} reviewed by admin {admin.id}: agree={body.agree}")
+    # reviewed_pest_key/reviewed_severity are optional (a caller may send only
+    # {"agree": true}) — None means "not reviewed", not "clear the farmer's label".
+    if body.reviewed_pest_key is not None:
+        photo.pest_key = body.reviewed_pest_key
+    if body.reviewed_severity is not None:
+        photo.severity = body.reviewed_severity
+    photo.reviewed_by = admin.id
+    photo.reviewed_at = datetime.now(UTC)
+    await db.commit()
+    await db.refresh(photo)
+    out = PhotoOut.model_validate(photo)
+    out.url = f"/api/v1/fields/{photo.field_id}/photos/{photo.id}/file"
+    return out
