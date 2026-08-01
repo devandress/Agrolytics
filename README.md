@@ -157,12 +157,14 @@ curl -s "http://localhost:8000/api/v1/dashboard/<user_id>" \
 ## Running tests
 
 ```bash
-# Inside the container
-docker-compose exec api pytest
+# Inside the container (recommended — this is where the deps live)
+docker exec agrovision-api-1 pytest -q
 
-# Or locally (requires rasterio, scikit-learn, etc.)
+# Locally: use a virtualenv, not the system Python. A distro `pluggy` older than
+# 1.0 crashes pytest-asyncio at collection time.
+python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-pytest
+pytest -q
 ```
 
 ---

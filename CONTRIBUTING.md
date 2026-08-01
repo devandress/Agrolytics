@@ -32,10 +32,10 @@ curl http://localhost:8000/health
 # Swagger UI
 open http://localhost:8000/docs
 
-# Test user login
+# Login (usá tu propia cuenta de desarrollo — nunca pegues credenciales acá)
 curl -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"123@gmail.com","password":"12345678"}'
+  -d "{\"email\":\"$DEV_EMAIL\",\"password\":\"$DEV_PASSWORD\"}"
 ```
 
 ## Code Structure
@@ -84,18 +84,35 @@ ruff check app/ tests/
 
 ### Testing
 
-Write tests for new features and bug fixes:
+Escribí tests para features nuevas y para cada bug que arregles.
+
+Corré los tests **dentro del contenedor**. Es donde están las dependencias reales
+(`slowapi`, `rasterio`, `planetary-computer`) y donde corre CI:
 
 ```bash
-# Run all tests
-pytest
+# Todos
+docker exec agrovision-api-1 pytest -q
 
-# Run specific test
-pytest tests/test_clustering.py::test_kmeans
+# Uno solo
+docker exec agrovision-api-1 pytest tests/test_indices.py::test_ndvi_range
 
-# Run with coverage
-pytest --cov=app --cov-report=html
+# Con cobertura
+docker exec agrovision-api-1 pytest --cov=app --cov-report=html
 ```
+
+<details>
+<summary>¿Por qué no <code>pytest</code> a secas en tu máquina?</summary>
+
+Puede fallar antes de recolectar un solo test si el `pluggy` del sistema es viejo:
+
+```
+TypeError: HookimplMarker.__call__() got an unexpected keyword argument 'specname'
+```
+
+Es un choque entre el `pluggy` de la distro y un `pytest-asyncio` moderno. Si querés
+correrlos fuera de Docker, usá un virtualenv propio con `pip install -r
+requirements.txt`; el `pytest` del sistema no alcanza.
+</details>
 
 **Test file location:** `tests/test_<module>.py`
 
@@ -166,7 +183,7 @@ Closes #42"
 
 2. **Run tests:**
    ```bash
-   pytest
+   docker exec agrovision-api-1 pytest -q
    ```
 
 3. **Type check:**

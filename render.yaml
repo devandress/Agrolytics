@@ -75,6 +75,13 @@ services:
                                      # efímero y los rásters se reescriben cada deploy.
       - key: DEMO_PASSWORD           # contraseña de la cuenta demo — set en dashboard.
         sync: false                  # Sin esto el seed aborta (no inventa credencial).
+      - key: PUBLIC_BASE_URL         # dominio público real — va dentro de los enlaces
+        sync: false                  # de recuperación de contraseña. Con localhost el
+                                     # arranque falla a propósito (config.py).
+      - key: MERCADOPAGO_ACCESS_TOKEN  # TEST-... primero; APP_USR-... sólo tras probar
+        sync: false                    # el flujo completo. Vacío = todo en modo preview.
+      - key: MERCADOPAGO_PUBLIC_KEY
+        sync: false
       - key: DEEPSEEK_API_KEY        # set in dashboard (secret)
         sync: false
       - key: SENTRY_DSN              # optional error tracking; set in dashboard
