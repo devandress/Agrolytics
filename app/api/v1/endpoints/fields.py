@@ -2,6 +2,7 @@
 
 import json
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from geoalchemy2.functions import ST_Area, ST_AsGeoJSON, ST_GeomFromGeoJSON, ST_Transform
@@ -10,6 +11,7 @@ from sqlalchemy import select, text
 from app.api.deps import CurrentUser, DBSession
 from app.models.field import Field
 from app.schemas.field import FieldCreate, FieldOut, FieldUpdate
+from app.services.crop_calendar import MEXICALI_OI, typical_planting_date
 from app.tasks.satellite_tasks import run_satellite_ingestion
 
 router = APIRouter()
@@ -32,6 +34,26 @@ def _wkb_to_geojson(geom_wkb) -> dict:
     """Convert GeoAlchemy2 WKBElement to a GeoJSON dict via ST_AsGeoJSON."""
     # Already serialised by the query below; this is a passthrough placeholder.
     return geom_wkb  # type: ignore[return-value]
+
+
+@router.get("/crop-calendar")
+async def crop_calendar_endpoint(current_user: CurrentUser) -> dict[str, Any]:
+    """Fecha de siembra típica por cultivo, del calendario oficial del ciclo vigente.
+
+    Se ofrece como *sugerencia*, no se aplica sola: el alta de parcela dice
+    explícitamente que si la siembra ya ocurrió sin registro se deje en blanco antes
+    que inventar. Un cultivo fuera del calendario no aparece acá.
+    """
+    out: dict[str, Any] = {}
+    for rec in MEXICALI_OI:
+        d = typical_planting_date(rec.crop)
+        if d:
+            out[rec.crop] = {
+                "date": str(d),
+                "label": rec.label,
+                "source": "SADER Baja California — ciclo Otoño-Invierno, Valle de Mexicali",
+            }
+    return out
 
 
 @router.post("", response_model=FieldOut, status_code=status.HTTP_201_CREATED)
@@ -70,6 +92,14 @@ async def create_field(payload: FieldCreate, current_user: CurrentUser, db: DBSe
                     "Mejora tu plan para agregarla.",
         )
 
+    # Sin fecha de siembra la fenología no tiene contra qué comparar: el vigor
+    # "esperado" queda indefinido y las tareas se generan contra una etapa que nadie
+    # calculó. Cuando el usuario no la sabe, se usa la del calendario oficial del
+    # ciclo vigente para ese cultivo (SADER Baja California, ver crop_calendar.py).
+    # Para un cultivo fuera de ese calendario no se propone nada: queda en None, que
+    # es honesto, en vez de una fecha inventada que ensucia todo lo que dependa de ella.
+    planting_date = payload.planting_date or typical_planting_date(payload.crop_type)
+
     field = Field(
         user_id=current_user.id,
         name=payload.name,
@@ -77,7 +107,7 @@ async def create_field(payload: FieldCreate, current_user: CurrentUser, db: DBSe
         area_ha=round(area_ha, 4),
         crop_type=payload.crop_type,
         notes=payload.notes,
-        planting_date=payload.planting_date,
+        planting_date=planting_date,
         expected_harvest=payload.expected_harvest,
         context=payload.context,
     )
