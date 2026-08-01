@@ -28,7 +28,15 @@ from app.core.config import settings
 from app.models.field import Field
 from app.models.index import Index
 from app.services import indices as idx
-from app.services.sensors import AUTO_OPTICAL, Sensor, find_asset
+from app.services.sensors import (
+    AUTO_OPTICAL,
+    MIN_USEFUL_PIXELS,
+    Sensor,
+    find_asset,
+    pixels_for_field,
+    to_reflectance,
+    useful_for_field,
+)
 
 _STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 _LOOKBACK_DAYS = 120
@@ -76,6 +84,19 @@ def ingest_sensor_for_all_fields(sensor: Sensor, db: Session, lookback_days: int
 def _ingest_sensor(db: Session, client: Client, field: Field, sensor: Sensor, lookback_days: int) -> int:
     from geoalchemy2.functions import ST_AsGeoJSON
     from sqlalchemy import select
+
+    # Un sensor demasiado grueso para el lote no se ingiere. MODIS cubre 19 ha en 3
+    # píxeles: no muestra una zona seca ni un foco de plaga, y encima entra en la
+    # serie con otra calibración, así que aporta ruido en vez de información. La
+    # regla mira el tamaño del lote, no el nombre del sensor: en un rancho grande
+    # MODIS pasa el umbral y se ingiere igual.
+    if not useful_for_field(sensor, field.area_ha):
+        logger.info(
+            f"Multisensor: {sensor.key} omitido en {field.id} — "
+            f"{pixels_for_field(sensor, field.area_ha or 0):.0f} px para "
+            f"{field.area_ha or 0:.1f} ha (mínimo {MIN_USEFUL_PIXELS})"
+        )
+        return 0
 
     geojson_str = db.execute(select(ST_AsGeoJSON(Field.geometry)).where(Field.id == field.id)).scalar_one()
     geom = json.loads(geojson_str)
@@ -168,8 +189,7 @@ def _compute(item: Any, field: Field, geom: dict, acq: date, sensor: Sensor) -> 
             if clip is None:
                 continue
             arr, profile = clip
-            if sensor.scale:
-                arr = (arr * sensor.scale + sensor.offset).astype(np.float32)
+            arr = to_reflectance(arr, sensor.scale, sensor.offset).astype(np.float32)
             arr = np.clip(arr, -1.0, 1.0)
             records.append(save(arr, profile, it))
         return records
@@ -185,9 +205,10 @@ def _compute(item: Any, field: Field, geom: dict, acq: date, sensor: Sensor) -> 
         if clip is None:
             continue
         arr, profile = clip
-        if sensor.scale:
-            arr = (arr * sensor.scale + sensor.offset).astype(np.float32)
-        bands[bname] = arr
+        # Conserva el 0 = sin dato. Con el desplazamiento de Landsat (−0.2) los
+        # píxeles vacíos pasaban a valer −0.2 de reflectancia, y el remuestreo los
+        # mezclaba con píxeles buenos en el borde de la parcela.
+        bands[bname] = to_reflectance(arr, sensor.scale, sensor.offset).astype(np.float32)
 
     # Align all bands to a common shape (the red band reference).
     ref = bands.get("red")
