@@ -489,7 +489,7 @@ async def pillars(field_id: uuid.UUID, current_user: CurrentUser, db: DBSession)
     plagas["weather"] = wx
 
     # ── Pilar 3: Biomasa (integral NDVI + fenología) ──
-    biomasa = estimate_biomass([(d, v) for d, v in ndvi_rows], crop, row["planting_date"])
+    biomasa = estimate_biomass(list(ndvi_rows), crop, row["planting_date"])
 
     return {"field_id": str(field_id), "crop": crop, "agua_suelo": agua, "plagas": plagas, "biomasa": biomasa}
 
@@ -639,7 +639,7 @@ async def phenology(field_id: uuid.UUID, current_user: CurrentUser, db: DBSessio
             .order_by(Index.date.asc())
         )
     ).all()
-    return assess_phenology([(d, v) for d, v in ndvi_rows], row["crop_type"], row["planting_date"])
+    return assess_phenology(list(ndvi_rows), row["crop_type"], row["planting_date"])
 
 
 @router.post("/{field_id}/report")
