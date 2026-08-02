@@ -60,6 +60,49 @@ async def _total_ha(db: DBSession, user_id: uuid.UUID) -> float:
     return float(total or 0.0)
 
 
+# ── Qué hacer ante un cambio de suscripción ──
+# Función pura a propósito: es el único código del sistema que decide si alguien
+# tiene o no un plan pago, y merece tests que no dependan de una base ni de que
+# MercadoPago conteste. El endpoint se queda con lo que sí necesita la base:
+# buscar al usuario y guardar.
+#
+# Lo que se decide acá NO se toma del cuerpo del webhook. MercadoPago manda sólo
+# un id; el endpoint consulta el preapproval con NUESTRO token y pasa esa respuesta
+# a esta función. Un tercero que adivine un id no puede otorgarse un plan porque
+# no puede fabricar la respuesta autenticada.
+def decide_subscription_change(preapproval: dict[str, Any]) -> dict[str, Any]:
+    """Decidir a partir del preapproval ya verificado.
+
+    Devuelve ``{"user_id", "plan", "status", "action"}`` con action ``grant`` o
+    ``revoke``, o ``{"reason": ...}`` si el evento no es accionable.
+    """
+    ref = preapproval.get("external_reference") or ""
+    if ":" not in ref:
+        return {"reason": "bad external_reference"}
+    user_id_str, plan = ref.split(":", 1)
+    try:
+        user_id = uuid.UUID(user_id_str)
+    except ValueError:
+        return {"reason": "bad user id"}
+    if plan not in PLANS:
+        return {"reason": "bad plan"}
+
+    status = preapproval.get("status")
+    if status == "authorized":
+        action = "grant"
+    elif status in ("cancelled", "paused"):
+        # Tarjeta rechazada, o el usuario canceló desde MercadoPago: la suscripción
+        # dejó de pagar, así que el plan pago deja de otorgarse.
+        action = "revoke"
+    else:
+        # pending, y cualquier estado futuro que MercadoPago agregue: no se toca el
+        # plan. Ante un estado desconocido, no cambiar nada es lo seguro — de las
+        # dos formas de equivocarse, regalar un plan pago es la cara.
+        action = "none"
+
+    return {"user_id": user_id, "plan": plan, "status": status, "action": action}
+
+
 @router.get("/plans")
 async def list_plans(current_user: CurrentUser, db: DBSession) -> dict[str, Any]:
     """Catalog of plans + gateway + the pricing disclaimer, priced for this user's own hectares."""
@@ -209,33 +252,23 @@ async def mercadopago_webhook(request: Request, db: DBSession) -> dict[str, Any]
     except Exception:
         return {"ok": False, "reason": "lookup failed"}
 
-    ref = preapproval.get("external_reference") or ""
-    if ":" not in ref:
-        return {"ok": False, "reason": "bad external_reference"}
-    user_id_str, plan = ref.split(":", 1)
-    try:
-        user_id = uuid.UUID(user_id_str)
-    except ValueError:
-        return {"ok": False, "reason": "bad user id"}
-    if plan not in PLANS:
-        return {"ok": False, "reason": "bad plan"}
+    decision = decide_subscription_change(preapproval)
+    if "reason" in decision:
+        return {"ok": False, "reason": decision["reason"]}
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(select(User).where(User.id == decision["user_id"]))
     user = result.scalar_one_or_none()
     if not user:
         return {"ok": False, "reason": "user not found"}
 
-    mp_status = preapproval.get("status")
-    if mp_status == "authorized":
-        user.plan = plan
+    if decision["action"] == "grant":
+        user.plan = decision["plan"]
         user.mercadopago_preapproval_id = entity_id
-    elif mp_status in ("cancelled", "paused"):
-        # Card declined, user cancelled from MercadoPago's own UI, etc. — the
-        # subscription stopped paying, so the paid plan stops being granted.
+    elif decision["action"] == "revoke":
         user.plan = "free"
         user.mercadopago_preapproval_id = None
     await db.commit()
-    return {"ok": True, "status": mp_status, "plan": user.plan}
+    return {"ok": True, "status": decision["status"], "plan": user.plan}
 
 
 @router.post("/subscribe")
