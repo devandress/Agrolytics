@@ -263,13 +263,39 @@ DEMO_TASKS: list[dict] = [
     {"field": 2, "task_type": "fertilizacion", "title": "Primera aplicación de N",
      "detail": "Dosis base aplicada en banda.", "priority": 3,
      "recommended_value": "90 kg N/ha", "zone": "completo", "due_in": -11, "done": True},
+
+    # ── Sin decidir: es lo que llena la bandeja de aprobación ──
+    # Sin al menos una de estas, la pantalla donde el productor acepta o descarta
+    # aparece vacía y el flujo entero queda sin poder probarse.
+    {"field": 1, "task_type": "riego", "title": "Regar tercio norte",
+     "detail": "Humedad foliar cayendo mientras sube la demanda del clima.",
+     "priority": 1, "recommended_value": "20 mm", "zone": "norte", "due_in": 0,
+     "estado": "propuesta"},
+    {"field": 3, "task_type": "inspeccion", "title": "Riesgo alto de mildiú velloso",
+     "detail": "Humedad de hoja prolongada y temperatura en ventana del patógeno. Ir a revisar.",
+     "priority": 1, "recommended_value": None, "zone": "ladera este", "due_in": 0,
+     "estado": "propuesta"},
+    {"field": 0, "task_type": "fertilizacion", "title": "Corregir clorofila baja",
+     "detail": "NDRE por debajo de lo esperado para el estado fenológico.",
+     "priority": 3, "recommended_value": "35 kg N/ha", "zone": "completo", "due_in": 2,
+     "estado": "propuesta"},
+
+    # Una ya descartada, con el motivo cargado: así se ve para qué sirve preguntar
+    # el porqué, que es la señal más valiosa que produce el sistema.
+    {"field": 2, "task_type": "riego", "title": "Regar sector alto",
+     "detail": "NDMI bajo en el borde norte.", "priority": 2,
+     "recommended_value": "15 mm", "zone": "norte", "due_in": -1,
+     "estado": "descartada", "motivo": "Ese borde es la sombra del cortavientos, no falta de agua."},
 ]
 
 
 async def _ensure_user(session) -> User:
     email = os.getenv("DEMO_EMAIL", "demo@agrolytics.app").strip().lower()
     password = os.getenv("DEMO_PASSWORD", "").strip()
-    plan = os.getenv("DEMO_PLAN", "pro").strip()
+    # enterprise por defecto: una cuenta de prueba tiene que poder tocar TODO. Con
+    # "pro" quedaba fuera el índice VHVV (radar), y quien prueba no puede distinguir
+    # "esto no existe" de "esto no está en mi plan".
+    plan = os.getenv("DEMO_PLAN", "enterprise").strip()
 
     user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if user:
@@ -392,18 +418,25 @@ async def _ensure_tasks(session, fields: list[Field], user: User) -> None:
         if existing:
             continue
         done = spec.get("done", False)
+        estado = spec.get("estado") or ("hecho" if done else "pendiente")
+        decidida = estado in ("pendiente", "hecho", "descartada")
         session.add(FieldTask(
             field_id=field.id,
             task_type=spec["task_type"],
             title=spec["title"],
             detail=spec["detail"],
             priority=spec["priority"],
-            status="hecho" if done else "pendiente",
+            status=estado,
             recommended_value=spec["recommended_value"],
             zone=spec["zone"],
             due_date=date.today() + timedelta(days=spec["due_in"]),
             completed_at=datetime.now(UTC) if done else None,
             completed_by=user.id if done else None,
+            # Una propuesta sin decidir no tiene decisión registrada: si la tuviera,
+            # la bandeja mostraría algo que ya fue resuelto.
+            decided_at=datetime.now(UTC) if decidida else None,
+            decided_by=user.id if decidida else None,
+            rejection_reason=spec.get("motivo"),
         ))
     await session.commit()
     logger.info("Demo tasks ensured (%d defined)", len(DEMO_TASKS))
