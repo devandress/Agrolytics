@@ -27,6 +27,7 @@ from app.services.ai_tasks import generate_ai_tasks_for_user
 from app.services.pest_risk import pest_risk
 from app.services.ranch_health import ranch_overview
 from app.services.task_generator import generate_tasks_for_user
+from app.services.uploads import UnsupportedImage, UploadTooLarge, read_image_upload
 
 router = APIRouter()
 
@@ -299,12 +300,20 @@ async def upload_photo(
     """Upload a field photo (multipart) that confirms/corrects an alert."""
     await _owned_field(db, field_id, current_user.id)
 
+    # La extensión sale del CONTENIDO, no del nombre que mandó el cliente: un
+    # `foto.jpg.svg` guardado tal cual se sirve después con JavaScript adentro.
+    try:
+        data, ext = await read_image_upload(file)
+    except UploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from None
+    except UnsupportedImage as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from None
+
     out_dir = Path(settings.DATA_DIR) / "photos" / str(field_id)
     out_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(file.filename or "photo.jpg").suffix or ".jpg"
     photo_id = uuid.uuid4()
     dest = out_dir / f"{photo_id}{ext}"
-    dest.write_bytes(await file.read())
+    dest.write_bytes(data)
 
     photo = FieldPhoto(
         id=photo_id,

@@ -2964,13 +2964,42 @@ async function choosePlan(planKey){
 }
 
 // ── PHOTO ──
+// Comprimir ANTES de subir. Una foto de teléfono pesa entre 3 y 12 MB, y las fotos
+// son el único costo de almacenamiento que crece de verdad — pesan unas 100 veces
+// más que todos los rásters juntos (ver docs/COSTOS.md). A 1600 px de lado largo y
+// calidad 80 queda en ~300 KB, y para ver una mancha en una hoja no se pierde nada:
+// el detalle que importa está muy por encima de esa resolución.
+//
+// Además sube por una red de campo, donde 4 MB pueden ser un minuto de espera.
+//
+// Si algo falla (formato que el navegador no decodifica, como HEIC en algunos
+// Android) se sube el archivo original: es preferible una foto pesada a ninguna.
+const FOTO_LADO_MAX=1600, FOTO_CALIDAD=0.8;
+async function comprimirFoto(file){
+  try{
+    if(!file.type.startsWith('image/'))return file;
+    const bitmap=await createImageBitmap(file);
+    const escala=Math.min(1,FOTO_LADO_MAX/Math.max(bitmap.width,bitmap.height));
+    // Ya es chica: recomprimir sólo agregaría artefactos sin ahorrar nada.
+    if(escala===1&&file.size<600*1024){bitmap.close();return file;}
+    const w=Math.round(bitmap.width*escala),h=Math.round(bitmap.height*escala);
+    const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+    canvas.getContext('2d').drawImage(bitmap,0,0,w,h);
+    bitmap.close();
+    const blob=await new Promise(res=>canvas.toBlob(res,'image/jpeg',FOTO_CALIDAD));
+    if(!blob||blob.size>=file.size)return file;   // no mejoró: mandá el original
+    return new File([blob],(file.name||'foto').replace(/\.[^.]+$/,'')+'.jpg',{type:'image/jpeg'});
+  }catch{return file;}
+}
+
 function openPhoto(fieldId,taskId,title){photoTaskCtx={fieldId,taskId};document.getElementById('photo-ctx').textContent='Tarea: '+title;document.getElementById('modal-photo').classList.add('on');}
 async function submitPhoto(){
   const e=document.getElementById('ph-err');e.textContent='';
   const file=document.getElementById('ph-file').files[0];if(!file){e.textContent='Selecciona o toma una foto.';return;}
   const b=document.getElementById('ph-submit');b.disabled=true;b.innerHTML='<span class="spin"></span>Enviando…';
   try{
-    const fd=new FormData();fd.append('file',file);
+    const enviar=await comprimirFoto(file);
+    const fd=new FormData();fd.append('file',enviar,enviar.name);
     fd.append('alert_confirmed',document.querySelector('input[name=ph-confirm]:checked').value);
     fd.append('caption',document.getElementById('ph-caption').value);
     if(photoTaskCtx.taskId)fd.append('task_id',photoTaskCtx.taskId);
