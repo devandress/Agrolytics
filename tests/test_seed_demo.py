@@ -109,3 +109,42 @@ def test_moisture_stress_leads_greenness():
         f"NDMI should dip first, got NDMI at {first_dip['NDMI']:.2f} "
         f"vs NDVI at {first_dip['NDVI']:.2f} of the cycle"
     )
+
+
+# ── La cuenta demo tiene que servir para PROBAR ──
+# Sin propuestas sin decidir, la bandeja de aprobación aparece vacía y el flujo más
+# nuevo del producto queda sin poder ejercitarse por quien hace QA.
+
+from app.seed_demo import DEMO_TASKS  # noqa: E402
+
+
+def _por_estado(estado):
+    return [t for t in DEMO_TASKS if (t.get("estado") or ("hecho" if t.get("done") else "pendiente")) == estado]
+
+
+def test_the_demo_has_undecided_proposals():
+    assert len(_por_estado("propuesta")) >= 2
+
+
+def test_at_least_one_proposal_is_urgent():
+    """Para poder ver que el asunto del correo y el orden de la bandeja cambian
+    cuando hay algo urgente."""
+    assert any(t["priority"] <= 1 for t in _por_estado("propuesta"))
+
+
+def test_a_rejected_task_carries_its_reason():
+    """Es el ejemplo de para qué sirve preguntar el porqué: sin uno cargado, quien
+    prueba no ve la parte más valiosa del flujo."""
+    descartadas = _por_estado("descartada")
+    assert descartadas
+    assert all(t.get("motivo") for t in descartadas)
+
+
+def test_the_demo_covers_every_state():
+    estados = {t.get("estado") or ("hecho" if t.get("done") else "pendiente") for t in DEMO_TASKS}
+    assert estados == {"propuesta", "pendiente", "hecho", "descartada"}
+
+
+def test_proposals_have_no_decision_recorded():
+    """Una propuesta con decisión ya cargada no aparecería en la bandeja."""
+    assert all("motivo" not in t for t in _por_estado("propuesta"))
