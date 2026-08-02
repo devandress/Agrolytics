@@ -15,6 +15,7 @@ celery_app = Celery(
         "app.tasks.multisensor_tasks",
         "app.tasks.insight_tasks",
         "app.tasks.backup_tasks",
+        "app.tasks.digest_tasks",
     ],
 )
 
@@ -54,5 +55,13 @@ celery_app.conf.beat_schedule = {
     "backup-database": {
         "task": "app.tasks.backup_tasks.run_database_backup",
         "schedule": crontab(minute=0, hour=8),  # 08:00 UTC daily
+    },
+    # Resumen diario a los productores. 12:00 UTC ≈ 6 de la mañana en el occidente
+    # de México, que es cuando se decide la jornada: más tarde el correo llega a un
+    # campo donde el trabajo ya se repartió. Corre después de la ingesta de la
+    # madrugada (01:30 UTC), así que el resumen sale con las imágenes del día.
+    "daily-digest": {
+        "task": "app.tasks.digest_tasks.run_daily_digest",
+        "schedule": crontab(minute=0, hour=12),
     },
 }
