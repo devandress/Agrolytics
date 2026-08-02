@@ -92,3 +92,73 @@ def test_plan_allows_radar_fusion_and_export():
     assert plan_allows_radar_fusion("pro") is True
     assert plan_allows_export("free") is False
     assert plan_allows_export("pro") is True
+
+
+# ── El webhook: único código que otorga o quita un plan pago ──
+# Antes de esto, la ruta del dinero no tenía un solo test. Se prueba la decisión
+# pura; el endpoint sólo busca al usuario y guarda.
+
+import uuid  # noqa: E402
+
+from app.api.v1.endpoints.billing import decide_subscription_change  # noqa: E402
+
+_UID = uuid.uuid4()
+
+
+def _pre(status, ref=None, **extra):
+    return {"status": status, "external_reference": ref if ref is not None else f"{_UID}:pro", **extra}
+
+
+def test_authorized_grants_the_plan_in_the_reference():
+    d = decide_subscription_change(_pre("authorized"))
+    assert d["action"] == "grant"
+    assert d["plan"] == "pro"
+    assert d["user_id"] == _UID
+
+
+def test_cancelled_revokes():
+    assert decide_subscription_change(_pre("cancelled"))["action"] == "revoke"
+
+
+def test_paused_revokes_too():
+    """Una tarjeta que deja de funcionar pausa la suscripción: si eso no revocara,
+    el plan pago seguiría activo sin que entre dinero."""
+    assert decide_subscription_change(_pre("paused"))["action"] == "revoke"
+
+
+def test_pending_changes_nothing():
+    """Autorización a medio camino. Otorgar acá sería regalar el plan."""
+    assert decide_subscription_change(_pre("pending"))["action"] == "none"
+
+
+def test_an_unknown_future_status_changes_nothing():
+    """De las dos formas de equivocarse ante un estado que no conocemos, regalar un
+    plan pago es la cara. Si MercadoPago agrega un estado, no se toca el plan."""
+    assert decide_subscription_change(_pre("charged_back"))["action"] == "none"
+
+
+def test_a_reference_without_separator_is_rejected():
+    assert "reason" in decide_subscription_change(_pre("authorized", ref="basura"))
+
+
+def test_a_non_uuid_user_is_rejected():
+    assert "reason" in decide_subscription_change(_pre("authorized", ref="no-soy-uuid:pro"))
+
+
+def test_an_unknown_plan_is_rejected():
+    """El plan sale de la referencia; sólo se aceptan los del catálogo, así que una
+    referencia manipulada no puede inventar un plan con límites mayores."""
+    d = decide_subscription_change(_pre("authorized", ref=f"{_UID}:ilimitado"))
+    assert d["reason"] == "bad plan"
+
+
+def test_a_missing_reference_is_rejected():
+    assert "reason" in decide_subscription_change({"status": "authorized"})
+
+
+def test_the_plan_comes_from_the_reference_not_from_the_payload():
+    """Si el plan se leyera de un campo suelto del cuerpo, bastaría con mandar
+    `plan: enterprise`. Sale de external_reference, que fijamos nosotros al crear
+    el preapproval."""
+    d = decide_subscription_change(_pre("authorized", ref=f"{_UID}:free", plan="enterprise"))
+    assert d["plan"] == "free"
