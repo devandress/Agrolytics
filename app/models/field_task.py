@@ -34,9 +34,28 @@ class FieldTask(Base):
     detail: Mapped[str | None] = mapped_column(Text)
     # 1 = urgent … 4 = low. Used for sorting the daily list.
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    # Ciclo de vida de una tarea:
+    #   propuesta  → el sistema la generó y espera que el productor la apruebe
+    #   pendiente  → aprobada, hay que hacerla
+    #   hecho      → hecha
+    #   descartada → el productor dijo que no corresponde
+    #
+    # "descartada" no es un cementerio: es la señal más valiosa que produce el
+    # sistema. Que alguien que conoce su campo rechace "regar" significa que el
+    # umbral está mal para ESE lote, y eso sólo se aprende si queda registrado.
     status: Mapped[str] = mapped_column(
-        Enum("pendiente", "hecho", name="task_status_enum"), nullable=False, default="pendiente"
+        Enum("pendiente", "hecho", "propuesta", "descartada", name="task_status_enum"),
+        nullable=False,
+        default="propuesta",
     )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    # Por qué se descartó, en palabras del productor. Texto libre a propósito: si se
+    # ofrecen sólo categorías predefinidas, el motivo que no anticipamos —que es
+    # justamente el que enseña algo— no tiene dónde entrar.
+    rejection_reason: Mapped[str | None] = mapped_column(String(300))
     # Human-readable recommended quantity, e.g. "25 mm" or "120 kg N/ha".
     recommended_value: Mapped[str | None] = mapped_column(String(100))
     zone: Mapped[str | None] = mapped_column(String(50))

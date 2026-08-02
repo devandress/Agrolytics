@@ -25,6 +25,9 @@ class TaskOut(BaseModel):
     lon: float | None = None
     # "punto" = go to this exact spot · "campo" = whole field, pin is the centroid.
     pin_scope: str = "campo"
+    # propuesta → pendiente → hecho, o propuesta → descartada.
+    decided_at: datetime | None = None
+    rejection_reason: str | None = None
     due_date: date
     completed_at: datetime | None = None
 

@@ -75,7 +75,9 @@ async def _has_open_task(
     conds = [
         FieldTask.field_id == field_id,
         FieldTask.task_type == task_type,
-        FieldTask.status == "pendiente",
+        # Una propuesta que el productor todavía no miró cuenta como abierta: si
+        # no, cada corrida diaria le apila la misma tarea otra vez.
+        FieldTask.status.in_(("pendiente", "propuesta")),
     ]
     if unpinned_only:
         conds.append(FieldTask.pin_scope == "campo")
@@ -89,7 +91,7 @@ async def _has_nearby_open_pin(db: AsyncSession, field_id: uuid.UUID, lat: float
         select(FieldTask.id).where(
             FieldTask.field_id == field_id,
             FieldTask.task_type == "inspeccion",
-            FieldTask.status == "pendiente",
+            FieldTask.status.in_(("pendiente", "propuesta")),
             # Only real hotspots dedup against a new hotspot — a whole-field task
             # pinned at the centroid must never suppress a located one near it.
             FieldTask.pin_scope == "punto",
