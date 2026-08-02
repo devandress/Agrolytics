@@ -26,6 +26,7 @@ from app.core.limiter import limiter
 from app.models.field import Field
 from app.models.field_task import FieldTask
 from app.models.index import Index
+from app.schemas.task import TaskOut
 from app.services import fusion
 from app.services.ai_report import build_ai_report
 from app.services.ai_tasks import propose_tasks
@@ -676,10 +677,10 @@ async def propose_field_tasks(
     return await propose_tasks(db, field, body.messages if body else None)
 
 
-@router.post("/{field_id}/tasks")
+@router.post("/{field_id}/tasks", response_model=TaskOut)
 async def create_one_task(
     field_id: uuid.UUID, current_user: CurrentUser, db: DBSession, t: NewTask
-) -> dict[str, Any]:
+) -> FieldTask:
     """Save a single task — from a chat proposal OR a click on the task map (lat/lon)."""
     await _own(db, field_id, current_user.id)
     tt = t.task_type if t.task_type in ("riego", "fertilizacion", "inspeccion", "otro") else "otro"
@@ -702,14 +703,12 @@ async def create_one_task(
     db.add(task)
     await db.commit()
     await db.refresh(task)
-    return {
-        "id": str(task.id),
-        "task_type": task.task_type,
-        "title": task.title,
-        "status": task.status,
-        "lat": task.lat,
-        "lon": task.lon,
-    }
+    # Antes devolvía un dict armado a mano con seis claves. Una tarea creada así
+    # salía con otra forma que la misma tarea leída por /tasks — sin `detail`, sin
+    # `priority` y, desde que existe, sin `pin_scope`. Devolver el mismo esquema
+    # que el resto evita que un consumidor futuro tenga que saber por qué endpoint
+    # entró la tarea para saber qué campos esperar.
+    return task
 
 
 @router.get("/{field_id}/analysis/export")
