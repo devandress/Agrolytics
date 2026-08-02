@@ -116,7 +116,7 @@ async def _open_tasks(db: AsyncSession, user_id: uuid.UUID, status: str):
             .order_by(FieldTask.priority.asc(), FieldTask.due_date.asc())
         )
     ).all()
-    return [(t, name) for t, name in rows]
+    return list(rows)
 
 
 async def send_digest_for_user(db: AsyncSession, user: User) -> bool:
