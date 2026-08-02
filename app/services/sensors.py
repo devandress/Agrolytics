@@ -87,14 +87,117 @@ VIIRS = Sensor(
     native_res_m=500, revisit_days=1, indices=("NDVI",), requires_auth=True, enabled=False,
 )
 
+# CBERS-4A/MUX (chino-brasileño, INPE) — 16 m con revisita de 5 días, la misma
+# cadencia que Sentinel-2 y muy por encima de Landsat. En un lote de 19 ha son ~750
+# píxeles: sirve de verdad para zonificar.
+#
+# Apagado por tres motivos concretos, no por descarte:
+#   1. No está en Planetary Computer. Vive en el STAC del INPE / Brazil Data Cube,
+#      así que necesita un cliente aparte del que usa el resto de la ingesta.
+#   2. Sólo trae azul, verde, rojo e infrarrojo cercano: alcanza para NDVI y EVI,
+#      pero NO para NDMI (falta SWIR) ni NDRE (falta red-edge).
+#   3. La cobertura del catálogo está centrada en Sudamérica. Antes de encenderlo hay
+#      que verificar que haya escenas sobre el norte de México, que es el mercado.
+# (La cámara WPM del mismo satélite da 8 m multiespectral y 2 m pancromático, pero
+# con revisita de 31 días: demasiado espaciada para seguir un cultivo.)
+CBERS4A_MUX = Sensor(
+    key="cbers4a", label="CBERS-4A/MUX (16 m)", collection="CBERS4A-MUX-L4-SR-1",
+    kind="optical", native_res_m=16, revisit_days=5,
+    indices=("NDVI", "EVI"), enabled=False,
+)
+
+# Gaofen-6/WFV (China) — 16 m con revisita de 4 días, más frecuente que Sentinel-2.
+# Es el único de esta lista diseñado explícitamente para agricultura de precisión, y
+# el único fuera de Sentinel-2 que trae RED-EDGE: dos bandas en 0.69–0.77 µm más una
+# amarilla en 0.59–0.63 µm. Eso habilita NDRE, que hoy sólo puede calcular Sentinel-2
+# (por eso NDRE tiene 24 fechas donde NDVI tiene 37).
+#
+# Apagado por el acceso, no por las especificaciones: los datos se distribuyen vía
+# CRESDA con registro, no con descarga abierta como Copernicus o USGS. Antes de
+# invertir en la integración hay que resolver si se consigue acceso programático
+# desde México; sin eso, las especificaciones son irrelevantes.
+GAOFEN6_WFV = Sensor(
+    key="gf6", label="Gaofen-6/WFV (16 m)", collection="GF6-WFV", kind="optical",
+    native_res_m=16, revisit_days=4,
+    indices=("NDVI", "NDRE", "EVI"), requires_auth=True, enabled=False,
+)
+
 # Registry keyed by sensor.key
-REGISTRY: dict[str, Sensor] = {s.key: s for s in (SENTINEL2, LANDSAT, MODIS, SENTINEL1, VIIRS)}
+REGISTRY: dict[str, Sensor] = {
+    s.key: s for s in (SENTINEL2, LANDSAT, MODIS, SENTINEL1, VIIRS, CBERS4A_MUX, GAOFEN6_WFV)
+}
 
 # Optical sensors that the generic multisensor ingestion will pull automatically.
 AUTO_OPTICAL = [s for s in (SENTINEL2, LANDSAT, MODIS) if s.enabled]
 
 # The high-resolution backbone all other sensors are normalised toward.
 BACKBONE_KEY = "s2"
+
+# Legacy rows stored the STAC *collection* id where the rest of the system expects
+# the registry *key*. Reading through this map keeps those observations usable —
+# without it Sentinel-1 shows up nameless in the UI and drops out of the
+# next-overpass list, because REGISTRY.get() never matches.
+_COLLECTION_TO_KEY: dict[str, str] = {s.collection: s.key for s in REGISTRY.values()}
+
+
+def normalize_sensor_key(value: str | None) -> str:
+    """Registry key for *value*, accepting either a key or a STAC collection id."""
+    if not value:
+        return BACKBONE_KEY  # filas del pipeline original, anteriores al campo sensor
+    if value in REGISTRY:
+        return value
+    return _COLLECTION_TO_KEY.get(value, value)
+
+
+# Por debajo de esto el "mapa" del lote es un puñado de cuadrados: no se puede ver
+# una zona seca, ni un foco de plaga, ni nada que justifique llamarlo agricultura de
+# precisión. Es una cota deliberadamente baja — sólo descarta lo que no sirve para
+# nada, no lo que sirve poco.
+MIN_USEFUL_PIXELS = 50
+
+
+def pixels_for_field(sensor: Sensor, area_ha: float) -> float:
+    """Cuántos píxeles de *sensor* caben en un lote de *area_ha* hectáreas."""
+    if area_ha <= 0:
+        return 0.0
+    return (area_ha * 10_000.0) / float(sensor.native_res_m**2)
+
+
+def to_reflectance(arr, scale: float | None, offset: float = 0.0):
+    """DN → reflectancia, conservando el 0 como "sin dato".
+
+    El detalle que importa es el orden. Un desplazamiento aditivo aplicado a ciegas
+    convierte el 0 de "sin dato" en un valor real: con Landsat (``DN*2.75e-5 - 0.2``)
+    los píxeles vacíos pasaban a valer −0.2 de reflectancia. Después el remuestreo
+    interpola esos −0.2 contra píxeles buenos y ensucia el borde de la parcela con
+    reflectancias que nadie midió — y como el índice resultante ya no da exactamente
+    0, sobrevive al filtro ``!= 0`` y entra en el promedio.
+
+    Todo el sistema usa 0 = sin dato (las validaciones ``> 0``, el colormap, el
+    recorte de rásters). Esta función mantiene esa convención.
+    """
+    if not scale:
+        return arr
+    nodata = arr == 0
+    out = arr * scale + offset
+    out[nodata] = 0.0
+    return out
+
+
+def useful_for_field(sensor: Sensor, area_ha: float | None,
+                     min_pixels: int = MIN_USEFUL_PIXELS) -> bool:
+    """¿Este sensor aporta algo en un lote de este tamaño?
+
+    MODIS a 250 m cubre un lote de 19 ha en **3 píxeles**. Eso no es un mapa: es un
+    número con forma de imagen, y encima contamina la serie porque llega con otra
+    calibración y otra fecha. La regla es por tamaño, no por sensor: en un rancho de
+    600 ha MODIS sí aporta (casi 100 píxeles) y ahí se ingiere igual.
+
+    Sin superficie conocida se responde ``True``: ante la duda, no se descarta dato.
+    """
+    if area_ha is None:
+        return True
+    return pixels_for_field(sensor, area_ha) >= min_pixels
 
 
 def get_sensor(key: str) -> Sensor | None:

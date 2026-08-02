@@ -120,7 +120,7 @@ def _accion(level: str, confidence: str, pest_name: str, scout: str) -> str:
     if level == "alto" and confidence == "alta":
         return f"Actuar en 24–48 h: confirma en campo ({scout.split(';')[0] if scout else 'inspección visual'}) y, si se confirma, aplica el manejo registrado para {pest_name}."
     if level == "alto":
-        return f"Riesgo alto pero con pocos datos reales medidos — confirma en campo antes de decidir cualquier aplicación. No apliques solo por este número."
+        return "Riesgo alto pero con pocos datos reales medidos — confirma en campo antes de decidir cualquier aplicación. No apliques solo por este número."
     if level == "medio":
         return f"Aún no amerita tratamiento. Monitorea de cerca las próximas 48 h: {scout or 'revisión visual del cultivo'}."
     return "Sin acción. Mantén el monitoreo de rutina."

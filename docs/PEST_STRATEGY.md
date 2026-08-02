@@ -24,7 +24,7 @@ Anomalías de NDVI/NDMI indican *dónde* ir a revisar; el visor de rásters + pi
 Lista costera de CA predefinida + el agricultor **activa/agrega** las plagas que le importan en su
 zona (`/fields/{id}/pest-catalog`). El modelo evalúa solo las activas.
 
-**Capa 4 — Verdad de campo (roadmap).**
+**Capa 4 — Verdad de campo (roadmap, arquitectura en [ACTIVE_LEARNING.md](ACTIVE_LEARNING.md)).**
 Para máxima precisión: registro de **scouting/trampas** (conteos) y **foto → identificación por IA
 visual**. Esto convierte los umbrales en **modelos calibrados** con datos reales del rancho (el
 volante de datos). Ya capturamos fotos de validación; falta el conteo y el clasificador de imagen.

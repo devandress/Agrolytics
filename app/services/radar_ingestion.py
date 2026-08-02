@@ -29,10 +29,15 @@ from app.models.field import Field
 from app.models.index import Index
 from app.models.satellite_scene import SatelliteScene
 from app.services import indices
+from app.services.sensors import SENTINEL1
 
 # Microsoft Planetary Computer — Sentinel-1 RTC (free, signed URLs via modifier)
 _STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
-_COLLECTION = "sentinel-1-rtc"
+# La colección STAC y la CLAVE del sensor no son lo mismo. Guardar la colección
+# ("sentinel-1-rtc") donde el resto del sistema espera la clave del registro
+# ("s1") dejaba al radar sin nombre en la interfaz y fuera del aviso de próximo
+# paso, porque REGISTRY.get() no lo encontraba.
+_COLLECTION = SENTINEL1.collection
 _LOOKBACK_DAYS = 90
 # Sentinel-1 RTC backscatter assets (linear power).
 _BAND_CANDIDATES = {
@@ -238,7 +243,7 @@ def _compute_radar_indices(item: Any, field: Field, geom_dict: dict, acq_date: d
         uri = _save_cog(rvi, out_dir / f"RVI_{date_tag}.tif", profile)
         records.append(Index(
             date=acq_date, index_type="RVI", raster_uri=uri, mean_value=mean_rvi,
-            extra_meta={"scene_id": item.id, "sensor": _COLLECTION},
+            extra_meta={"scene_id": item.id, "sensor": SENTINEL1.key},
         ))
 
         ratio = indices.vh_vv_ratio(bands["vv"], bands["vh"])
@@ -247,7 +252,7 @@ def _compute_radar_indices(item: Any, field: Field, geom_dict: dict, acq_date: d
         uri = _save_cog(ratio, out_dir / f"VHVV_{date_tag}.tif", profile)
         records.append(Index(
             date=acq_date, index_type="VHVV", raster_uri=uri, mean_value=mean_ratio,
-            extra_meta={"scene_id": item.id, "sensor": _COLLECTION},
+            extra_meta={"scene_id": item.id, "sensor": SENTINEL1.key},
         ))
 
     return records

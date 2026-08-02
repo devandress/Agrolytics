@@ -53,8 +53,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libgdal-dev libgeos-dev libproj-dev
 
+      # Sin --no-cache-dir a propósito: el paso de setup-python pide `cache: pip`,
+      # que al terminar el job guarda ~/.cache/pip. Con --no-cache-dir pip nunca
+      # crea ese directorio, así que la limpieza post-job fallaba con "Cache folder
+      # path is retrieved for pip but doesn't exist on disk" y tumbaba el run
+      # entero DESPUÉS de que lint y tests habían pasado. --no-cache-dir tiene
+      # sentido dentro de una imagen Docker, donde el objetivo es no engordar la
+      # capa; en un runner efímero sólo hace más lento el build.
       - name: Install Python dependencies
-        run: pip install --no-cache-dir -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Lint (ruff)
         run: ruff check app tests

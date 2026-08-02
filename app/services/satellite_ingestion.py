@@ -21,6 +21,7 @@ from app.models.field import Field
 from app.models.index import Index
 from app.models.satellite_scene import SatelliteScene
 from app.services import indices
+from app.services.sensors import to_reflectance
 
 # Microsoft Planetary Computer — Sentinel-2 L2A (free, signed URLs via modifier)
 _STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
@@ -177,6 +178,57 @@ def _process_field(db: Session, client: Client, field: Field, date_range: str) -
     return new_records
 
 
+# ── Sentinel-2 L2A: de enteros a reflectancia ──
+# reflectancia = (DN + BOA_ADD_OFFSET) / 10000
+#
+# Desde la baseline de procesamiento 04.00 (enero 2022) ESA agrega un desplazamiento
+# de -1000 a las bandas. La colección "sentinel-2-l2a" de Planetary Computer NO lo
+# aplica ni lo declara en `raster:bands`: entrega el DN de Sen2Cor tal cual. Verificado
+# contra una escena real del campo (baseline 05.12):
+#
+#                        red     nir    blue    NDVI
+#   sin el desplazamiento  0.224  0.302  0.173   0.150
+#   con el desplazamiento  0.124  0.202  0.073   0.243
+#   Landsat, mismo campo                          0.270
+#
+# Un azul de 0.173 sobre suelo agrícola es imposible (lo normal es 0.02–0.08), y el
+# NDVI sin corregir quedaba en 0.15 contra 0.27 de Landsat. O sea: buena parte del
+# "desfase entre sensores" de -0.157 que medimos NO era diferencia entre instrumentos,
+# era este desplazamiento faltante. Con la corrección la brecha baja a 0.027.
+#
+# Ojo con el orden: el desplazamiento es aditivo, así que aplicado a un píxel sin
+# dato (0) lo convertiría en -0.1 y rompería la convención "0 = sin dato" que usan
+# las validaciones y el colormap. Por eso se preserva el cero explícitamente.
+_S2_REFLECTANCE_SCALE = 1e-4
+_S2_BOA_OFFSET_FROM_BASELINE = 4.0
+_S2_BOA_OFFSET = -1000.0
+
+
+def _s2_boa_offset(item: Any) -> float:
+    """Desplazamiento BOA de esta escena, según su baseline de procesamiento.
+
+    Escenas viejas reprocesadas con baseline < 04.00 no lo llevan; desplazarlas
+    igual las rompería. Si la propiedad no viene, se asume la baseline moderna:
+    hoy toda escena nueva la tiene, y equivocarse hacia el otro lado deja el error
+    que este código existe para corregir.
+    """
+    raw = item.properties.get("s2:processing_baseline")
+    try:
+        baseline = float(raw)
+    except (TypeError, ValueError):
+        return _S2_BOA_OFFSET
+    return _S2_BOA_OFFSET if baseline >= _S2_BOA_OFFSET_FROM_BASELINE else 0.0
+
+
+def _to_reflectance(arr: np.ndarray, offset: float) -> np.ndarray:
+    """DN → reflectancia para Sentinel-2, conservando el 0 como "sin dato".
+
+    El desplazamiento de Sentinel-2 se expresa en DN (−1000), no en reflectancia,
+    así que entra antes de dividir: ``(DN − 1000) / 10000``.
+    """
+    return to_reflectance(arr + np.where(arr == 0, 0.0, offset), _S2_REFLECTANCE_SCALE)
+
+
 def _compute_indices(item: Any, field: Field, geom_dict: dict, acq_date: date) -> list[Index]:
     out_dir = Path(settings.DATA_DIR) / "cog" / str(field.id)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -188,6 +240,10 @@ def _compute_indices(item: Any, field: Field, geom_dict: dict, acq_date: date) -
         "swir":    ["swir16", "swir-16", "B11"],
         "blue":    ["blue", "B02", "B2"],
         "rededge": ["rededge", "rededge1", "red-edge", "B05", "B5"],
+        # Scene Classification Layer (Sen2Cor, sólo L2A): la clase de cada píxel.
+        # Va última a propósito: es categórica, no espectral, y no debe usarse como
+        # banda de referencia para la grilla de salida.
+        "scl":     ["SCL", "scl", "scene-classification", "scene_classification"],
     }
 
     bands: dict[str, np.ndarray] = {}
@@ -237,7 +293,7 @@ def _compute_indices(item: Any, field: Field, geom_dict: dict, acq_date: date) -
     # array shape (rasterio doesn't validate this on write; it just writes the
     # array into a canvas sized from the stale profile, corrupting geolocation
     # and truncating resolution down to the coarsest band, e.g. 20 m SWIR/red-edge).
-    ref_band = next(iter(bands), None)
+    ref_band = next((b for b in bands if b != "scl"), None)
     ref_shape = bands[ref_band].shape if ref_band else None
     profile = band_profiles[ref_band] if ref_band else {}
     if ref_shape:
@@ -246,9 +302,38 @@ def _compute_indices(item: Any, field: Field, geom_dict: dict, acq_date: date) -
                 try:
                     from scipy.ndimage import zoom as ndimage_zoom
                     zf = (ref_shape[0] / arr.shape[0], ref_shape[1] / arr.shape[1])
-                    bands[k] = ndimage_zoom(arr, zf, order=1).astype(np.float32)
+                    # order=0 (vecino más cercano) para la SCL: sus valores son
+                    # códigos de clase, no magnitudes. Interpolar entre "sombra de
+                    # nube" (3) y "vegetación" (4) da 3.5, que no significa nada.
+                    order = 0 if k == "scl" else 1
+                    bands[k] = ndimage_zoom(arr, zf, order=order).astype(np.float32)
                 except Exception:
                     del bands[k]
+
+    # ── Enmascarado de nubes ──
+    # Sin esto, un píxel tapado por una nube entra al promedio como si fuera planta y
+    # tira el índice al piso: es el origen de valores imposibles como NDVI = -0.002
+    # en lechuga a media temporada. La SCL ya trae esa clasificación hecha por el
+    # procesador oficial; sólo hay que respetarla.
+    clear, cloud_frac = _clear_mask(bands.pop("scl", None))
+    if clear is not None:
+        for arr in bands.values():
+            arr[~clear] = 0.0   # 0 = sin dato, la convención que ya usa el resto
+        logger.info(f"SCL: {cloud_frac:.0%} de la parcela descartado por nube/sombra en {item.id}")
+
+    # ── De enteros a reflectancia ──
+    # Dos cosas distintas se arreglan acá (ver la nota junto a _S2_REFLECTANCE_SCALE):
+    #   · La ESCALA afecta sólo al EVI. NDVI, NDMI y NDRE son diferencias
+    #     normalizadas y el factor se cancela; el EVI tiene constantes absolutas
+    #     (`+1`, coeficientes 6 y −7.5) que exigen reflectancia 0–1. Sobre enteros
+    #     el EVI de Sentinel-2 promediaba 0.562 con un NDVI de 0.153 y llegaba a
+    #     −0.688, cuando Landsat (ya escalado) daba 0.148.
+    #   · El DESPLAZAMIENTO afecta a TODOS, incluidos los normalizados: es aditivo,
+    #     así que no se cancela en (a−b)/(a+b). Es el que explica casi todo el
+    #     supuesto sesgo entre Sentinel-2 y Landsat.
+    _offset = _s2_boa_offset(item)
+    for _name in list(bands):
+        bands[_name] = _to_reflectance(bands[_name], _offset)
 
     records: list[Index] = []
     date_tag = acq_date.isoformat().replace("-", "")
@@ -260,7 +345,8 @@ def _compute_indices(item: Any, field: Field, geom_dict: dict, acq_date: date) -
         uri = _save_cog(ndvi, out_dir / f"NDVI_{date_tag}.tif", profile)
         records.append(Index(
             date=acq_date, index_type="NDVI", raster_uri=uri, mean_value=mean_ndvi,
-            extra_meta={"scene_id": item.id, "cloud": item.properties.get("eo:cloud_cover")},
+            extra_meta={"scene_id": item.id, "cloud": item.properties.get("eo:cloud_cover"),
+                        "masked_frac": cloud_frac},
         ))
 
     if "nir" in bands and "swir" in bands:
@@ -270,7 +356,7 @@ def _compute_indices(item: Any, field: Field, geom_dict: dict, acq_date: date) -
         uri = _save_cog(ndmi, out_dir / f"NDMI_{date_tag}.tif", profile)
         records.append(Index(
             date=acq_date, index_type="NDMI", raster_uri=uri, mean_value=mean_ndmi,
-            extra_meta={"scene_id": item.id},
+            extra_meta={"scene_id": item.id, "masked_frac": cloud_frac},
         ))
 
     if "nir" in bands and "rededge" in bands:
@@ -280,7 +366,7 @@ def _compute_indices(item: Any, field: Field, geom_dict: dict, acq_date: date) -
         uri = _save_cog(ndre, out_dir / f"NDRE_{date_tag}.tif", profile)
         records.append(Index(
             date=acq_date, index_type="NDRE", raster_uri=uri, mean_value=mean_ndre,
-            extra_meta={"scene_id": item.id},
+            extra_meta={"scene_id": item.id, "masked_frac": cloud_frac},
         ))
 
     if "red" in bands and "nir" in bands and "blue" in bands:
@@ -290,10 +376,34 @@ def _compute_indices(item: Any, field: Field, geom_dict: dict, acq_date: date) -
         uri = _save_cog(evi, out_dir / f"EVI_{date_tag}.tif", profile)
         records.append(Index(
             date=acq_date, index_type="EVI", raster_uri=uri, mean_value=mean_evi,
-            extra_meta={"scene_id": item.id},
+            extra_meta={"scene_id": item.id, "masked_frac": cloud_frac},
         ))
 
     return records
+
+
+# Clases de la Scene Classification Layer de Sen2Cor que NO sirven para calcular un
+# índice de vegetación. Se descartan 0 (sin dato), 1 (saturado/defectuoso), 2 (sombra
+# oscura), 3 (sombra de nube), 8 y 9 (nube probable y muy probable), 10 (cirros finos)
+# y 11 (nieve/hielo). Se conservan 4 (vegetación), 5 (suelo desnudo), 6 (agua) y
+# 7 (sin clasificar) — descartar "sin clasificar" borraría píxeles buenos de borde.
+_SCL_DISCARD = frozenset({0, 1, 2, 3, 8, 9, 10, 11})
+
+
+def _clear_mask(scl: np.ndarray | None) -> tuple[np.ndarray | None, float | None]:
+    """Máscara de píxeles utilizables y fracción descartada, a partir de la SCL.
+
+    Devuelve ``(None, None)`` cuando la escena no trae SCL (Landsat, MODIS o
+    Sentinel-2 nivel L1C): en ese caso no se inventa una máscara, se sigue como antes
+    y el consumidor sabe, por el ``masked_frac`` ausente, que no hubo filtrado.
+    """
+    if scl is None:
+        return None, None
+    codes = np.rint(scl).astype(np.int16)
+    discard = np.isin(codes, list(_SCL_DISCARD))
+    clear = ~discard
+    total = int(codes.size)
+    return clear, (round(float(discard.sum()) / total, 4) if total else None)
 
 
 def _save_cog(data: np.ndarray, path: Path, profile: dict) -> str:

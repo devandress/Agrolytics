@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from loguru import logger
@@ -58,7 +58,7 @@ def _prune_old_backups(client, key_now: str) -> int:
     """Delete backups older than BACKUP_RETENTION_DAYS. Returns count deleted."""
     resp = client.list_objects_v2(Bucket=settings.BACKUP_S3_BUCKET, Prefix=_PREFIX)
     objects = resp.get("Contents", [])
-    cutoff = datetime.now(timezone.utc).timestamp() - settings.BACKUP_RETENTION_DAYS * 86400
+    cutoff = datetime.now(UTC).timestamp() - settings.BACKUP_RETENTION_DAYS * 86400
     to_delete = [o["Key"] for o in objects
                  if o["Key"] != key_now and o["LastModified"].timestamp() < cutoff]
     for key in to_delete:
@@ -79,7 +79,7 @@ def backup_database_to_object_storage() -> dict:
         )
         return {"status": "skipped", "reason": "not configured"}
 
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     key = f"{_PREFIX}{stamp}.dump"
 
     with tempfile.TemporaryDirectory() as tmp:

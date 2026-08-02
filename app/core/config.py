@@ -11,6 +11,9 @@ _INSECURE_JWT_SECRETS = {
 }
 
 
+_DEFAULT_PUBLIC_BASE_URL = "http://localhost:8001"
+
+
 class Settings(BaseSettings):
     """Central settings object; values come from environment / .env file."""
 
@@ -68,7 +71,7 @@ class Settings(BaseSettings):
     MERCADOPAGO_PUBLIC_KEY: str = ""
     # Public origin used to build MercadoPago back_urls + webhook notification_url,
     # and password-reset links.
-    PUBLIC_BASE_URL: str = "http://localhost:8001"
+    PUBLIC_BASE_URL: str = _DEFAULT_PUBLIC_BASE_URL
 
     # ── Transactional email (password reset). Empty host = no-op: the reset link
     # is logged instead of emailed (loud, not silent) — fine for local dev, not
@@ -141,6 +144,31 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _adopt_platform_url(self) -> "Settings":
+        """Tomar la URL pública que la plataforma ya conoce.
+
+        Problema del huevo y la gallina en el primer deploy: no sabés el dominio
+        hasta que el servicio existe, pero el servicio no arranca sin dominio (los
+        enlaces de recuperación de contraseña saldrían apuntando a localhost). Render
+        expone `RENDER_EXTERNAL_URL` en el entorno, así que el primer deploy se
+        resuelve solo y recién al poner dominio propio hay que fijar la variable.
+
+        Sólo se adopta si `PUBLIC_BASE_URL` quedó en su valor por defecto: un valor
+        puesto a mano siempre gana.
+        """
+        import os
+
+        platform_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
+        if platform_url and self.PUBLIC_BASE_URL == _DEFAULT_PUBLIC_BASE_URL:
+            self.PUBLIC_BASE_URL = platform_url
+            # El navegador va a hablar con ese mismo origen, así que tiene que estar
+            # permitido; si no, el primer deploy responde pero el frontend no puede
+            # llamar a su propia API.
+            if platform_url not in self.cors_origins_list:
+                self.CORS_ORIGINS = f"{self.CORS_ORIGINS},{platform_url}".strip(",")
+        return self
+
+    @model_validator(mode="after")
     def _enforce_production_security(self) -> "Settings":
         """Fail fast on insecure configuration when APP_ENV=production."""
         if not self.is_production:
@@ -156,6 +184,17 @@ class Settings(BaseSettings):
             errors.append("DATABASE_URL uses the default 'postgres' password in production.")
         if "*" in self.cors_origins_list:
             errors.append("CORS_ORIGINS must not be '*' in production.")
+        # PUBLIC_BASE_URL termina dentro de los correos de recuperación de contraseña.
+        # Con el valor por defecto, el usuario recibe un enlace a `localhost` que no
+        # abre en su teléfono: la cuenta queda irrecuperable y el fallo es silencioso
+        # (el correo se envía, se ve bien, y no funciona).
+        if "localhost" in self.PUBLIC_BASE_URL or "127.0.0.1" in self.PUBLIC_BASE_URL:
+            errors.append(
+                "PUBLIC_BASE_URL apunta a localhost en producción; los enlaces de "
+                "recuperación de contraseña saldrían rotos. Poné el dominio público."
+            )
+        if not self.PUBLIC_BASE_URL.startswith("https://"):
+            errors.append("PUBLIC_BASE_URL debe ser https:// en producción.")
 
         if errors:
             raise ValueError("Insecure production configuration:\n  - " + "\n  - ".join(errors))

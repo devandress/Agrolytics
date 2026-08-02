@@ -12,6 +12,7 @@ tasks (left blank) — we never invent data that would become noise for a future
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import uuid
@@ -26,7 +27,15 @@ from app.core.config import settings
 from app.models.field import Field
 from app.models.field_task import FieldTask
 from app.models.index import Index
-from app.services.task_generator import _has_open_task, generate_pest_pins_for_field, generate_tasks_for_field
+from app.services.pest_risk_raster import build_pest_risk_pins
+from app.services.pest_weather import fetch_pest_weather
+from app.services.task_generator import (
+    _has_open_task,
+    _pest_priority_from_weather,
+    _pest_priority_inputs,
+    generate_pest_pins_for_field,
+    generate_tasks_for_field,
+)
 
 _DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 _MODEL = "deepseek-v4-flash"
@@ -66,19 +75,31 @@ async def _gather(db: AsyncSession, field: Field) -> dict | None:
         data["cosecha_estimada_aprox"] = str(field.expected_harvest)
     found = False
     for idx in ("NDVI", "NDMI", "NDRE", "EVI"):
-        rows = (await db.execute(
-            select(Index.date, Index.mean_value, Index.extra_meta)
-            .where(Index.field_id == field.id, Index.index_type == idx, Index.mean_value.isnot(None))
-            .order_by(Index.date.desc()).limit(4))).all()
+        rows = (
+            await db.execute(
+                select(Index.date, Index.mean_value, Index.extra_meta)
+                .where(Index.field_id == field.id, Index.index_type == idx, Index.mean_value.isnot(None))
+                .order_by(Index.date.desc())
+                .limit(4)
+            )
+        ).all()
         if not rows:
             continue
         found = True
-        series = [{"fecha": str(d), "valor": round(v, 3), "sensor": (m or {}).get("sensor", "s2")}
-                  for d, v, m in rows]
+        series = [
+            {"fecha": str(d), "valor": round(v, 3), "sensor": (m or {}).get("sensor", "s2")}
+            for d, v, m in rows
+        ]
         latest, oldest = rows[0][1], rows[-1][1]
-        data["indices"][idx] = {"ultimo": round(latest, 3),
-                                "tendencia": "baja" if latest < oldest - 0.02 else "sube" if latest > oldest + 0.02 else "estable",
-                                "serie": series}
+        data["indices"][idx] = {
+            "ultimo": round(latest, 3),
+            "tendencia": "baja"
+            if latest < oldest - 0.02
+            else "sube"
+            if latest > oldest + 0.02
+            else "estable",
+            "serie": series,
+        }
     return data if found else None
 
 
@@ -104,13 +125,15 @@ def _parse_tasks(text: str) -> list[dict]:
         except (TypeError, ValueError):
             prio = 3
         rv = t.get("recommended_value")
-        out.append({
-            "task_type": tt,
-            "title": str(t.get("title", "Tarea"))[:255],
-            "detail": str(t.get("detail", ""))[:500],
-            "priority": min(4, max(1, prio)),
-            "recommended_value": (str(rv)[:100] if rv not in (None, "null", "") else None),
-        })
+        out.append(
+            {
+                "task_type": tt,
+                "title": str(t.get("title", "Tarea"))[:255],
+                "detail": str(t.get("detail", ""))[:500],
+                "priority": min(4, max(1, prio)),
+                "recommended_value": (str(rv)[:100] if rv not in (None, "null", "") else None),
+            }
+        )
     return out[:4]
 
 
@@ -133,36 +156,53 @@ async def _call_deepseek(payload: dict) -> list[dict]:
     return _parse_tasks(content)
 
 
-async def generate_ai_tasks_for_field(db: AsyncSession, field: Field) -> tuple[int, str]:
-    """Generate AI tasks for one field from real data. Returns (count, source)."""
+async def generate_ai_tasks_for_field(
+    db: AsyncSession,
+    field: Field,
+    pest_points: list[dict] | None = None,
+    pest_priority: str | None = None,
+) -> tuple[int, str, list[FieldTask]]:
+    """Generate AI tasks for one field from real data. Returns (count, source, created tasks).
+
+    ``pest_points``/``pest_priority`` are an optional precomputed pass-through to
+    ``generate_pest_pins_for_field`` (see its docstring) for batch callers.
+    """
     payload = await _gather(db, field)
     if payload is None:
-        return 0, "sin_datos"  # no real observations → leave blank
+        return 0, "sin_datos", []  # no real observations → leave blank
 
     if settings.DEEPSEEK_API_KEY:
         try:
             tasks = await _call_deepseek(payload)
-            created = 0
+            created: list[FieldTask] = []
             for t in tasks:
                 if await _has_open_task(db, field.id, t["task_type"]):
                     continue
-                db.add(FieldTask(
-                    field_id=field.id, task_type=t["task_type"], title=t["title"],
-                    detail=t["detail"], priority=t["priority"],
-                    recommended_value=t["recommended_value"], due_date=date.today()))
-                created += 1
+                task = FieldTask(
+                    field_id=field.id,
+                    task_type=t["task_type"],
+                    title=t["title"],
+                    detail=t["detail"],
+                    priority=t["priority"],
+                    recommended_value=t["recommended_value"],
+                    due_date=date.today(),
+                )
+                db.add(task)
+                created.append(task)
             # Pest pins are independent of the AI/rules choice for the other tasks.
-            created += len(await generate_pest_pins_for_field(db, field))
+            created += await generate_pest_pins_for_field(
+                db, field, points=pest_points, priority=pest_priority
+            )
             if created:
                 await db.flush()
-                logger.info(f"AI generated {created} task(s) for field {field.id}")
-            return created, "ia"
+                logger.info(f"AI generated {len(created)} task(s) for field {field.id}")
+            return len(created), "ia", created
         except Exception as exc:
             logger.warning(f"AI task gen failed for {field.id} ({exc}); using rules.")
 
     # Fallback: deterministic rule engine over the same real data.
-    created = await generate_tasks_for_field(db, field)
-    return len(created), "reglas"
+    created = await generate_tasks_for_field(db, field, pest_points=pest_points, pest_priority=pest_priority)
+    return len(created), "reglas", created
 
 
 async def propose_tasks(db: AsyncSession, field: Field, messages: list[dict] | None = None) -> dict:
@@ -173,25 +213,36 @@ async def propose_tasks(db: AsyncSession, field: Field, messages: list[dict] | N
     """
     payload = await _gather(db, field)
     if payload is None:
-        return {"tasks": [], "reply": "Aún no hay datos satelitales reales de esta parcela, así que no propongo tareas (no inventamos datos)."}
+        return {
+            "tasks": [],
+            "reply": "Aún no hay datos satelitales reales de esta parcela, así que no propongo tareas (no inventamos datos).",
+        }
     if messages:
         payload["conversacion"] = messages[-6:]  # últimos turnos como contexto
 
     # Take existing map points/tasks into account so the AI doesn't duplicate them.
-    existing = (await db.execute(
-        select(FieldTask.task_type, FieldTask.title, FieldTask.lat, FieldTask.lon)
-        .where(FieldTask.field_id == field.id, FieldTask.status == "pendiente"))).all()
+    existing = (
+        await db.execute(
+            select(FieldTask.task_type, FieldTask.title, FieldTask.lat, FieldTask.lon).where(
+                FieldTask.field_id == field.id, FieldTask.status == "pendiente"
+            )
+        )
+    ).all()
     if existing:
         payload["tareas_existentes"] = [
             {"tipo": tt, "titulo": ti, "punto": ([round(la, 5), round(lo, 5)] if la and lo else None)}
-            for tt, ti, la, lo in existing]
+            for tt, ti, la, lo in existing
+        ]
     if not settings.DEEPSEEK_API_KEY:
         return {"tasks": [], "reply": "El asistente de IA no está configurado."}
     try:
         tasks = await _call_deepseek(payload)
         if not tasks:
             return {"tasks": [], "reply": "Los índices se ven sanos: no propongo tareas por ahora."}
-        return {"tasks": tasks, "reply": f"Te propongo {len(tasks)} tarea(s) según los datos. Revísalas y agrega las que quieras."}
+        return {
+            "tasks": tasks,
+            "reply": f"Te propongo {len(tasks)} tarea(s) según los datos. Revísalas y agrega las que quieras.",
+        }
     except Exception as exc:
         logger.warning(f"propose_tasks failed for {field.id}: {exc}")
         return {"tasks": [], "reply": "No pude analizar ahora mismo. Intenta de nuevo en unos segundos."}
@@ -200,11 +251,55 @@ async def propose_tasks(db: AsyncSession, field: Field, messages: list[dict] | N
 async def generate_ai_tasks_for_user(db: AsyncSession, user_id: uuid.UUID) -> dict:
     """Run AI task generation across all of a user's fields."""
     fields = (await db.execute(select(Field).where(Field.user_id == user_id))).scalars().all()
-    total, source = 0, "ia"
+
+    # fetch_pest_weather (Open-Meteo, up to 15s) is the only per-field network call in
+    # this path (DeepSeek is per-field regardless). Compute the (DB-only, cheap)
+    # pest-risk points for every field first, then fire all the needed weather
+    # fetches concurrently instead of blocking sequentially field by field.
+    points_by_field: dict[uuid.UUID, list[dict]] = {}
+    weather_inputs: dict[uuid.UUID, tuple[dict, float, float]] = {}
     for f in fields:
-        n, src = await generate_ai_tasks_for_field(db, f)
+        points = await build_pest_risk_pins(db, f.id, f.crop_type, settings.DATA_DIR)
+        points_by_field[f.id] = points
+        inputs = await _pest_priority_inputs(db, f, points)
+        if inputs:
+            weather_inputs[f.id] = inputs
+
+    priorities: dict[uuid.UUID, str] = {}
+    if weather_inputs:
+        field_ids = list(weather_inputs.keys())
+        results = await asyncio.gather(
+            *(fetch_pest_weather(lat, lon) for _pest, lat, lon in weather_inputs.values())
+        )
+        for fid, wx in zip(field_ids, results, strict=True):
+            pest, _lat, _lon = weather_inputs[fid]
+            priorities[fid] = _pest_priority_from_weather(pest, wx)
+
+    total, source = 0, "ia"
+    all_tasks: list[FieldTask] = []
+    for f in fields:
+        n, src, tasks = await generate_ai_tasks_for_field(
+            db, f, pest_points=points_by_field[f.id], pest_priority=priorities.get(f.id, "media")
+        )
         total += n
+        all_tasks.extend(tasks)
         if src == "reglas":
             source = "reglas"
+    # Read attributes before commit() expires them — under the async engine, attribute
+    # access on an expired instance needs an explicit await (session.refresh), so this
+    # must happen before commit, not after. photo_priority (Active Learning Fase 0,
+    # docs/ACTIVE_LEARNING.md §1) is an ephemeral, non-mapped field so the mobile
+    # "confirm in field" flow can badge which new tasks are most informative to photograph.
+    tasks_out = [
+        {
+            "id": str(t.id),
+            "field_id": str(t.field_id),
+            "task_type": t.task_type,
+            "title": t.title,
+            "priority": t.priority,
+            "photo_priority": getattr(t, "photo_priority", None),
+        }
+        for t in all_tasks
+    ]
     await db.commit()
-    return {"created": total, "source": source}
+    return {"created": total, "source": source, "tasks": tasks_out}

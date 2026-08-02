@@ -41,8 +41,18 @@ class FieldTask(Base):
     recommended_value: Mapped[str | None] = mapped_column(String(100))
     zone: Mapped[str | None] = mapped_column(String(50))
     # Map point where the task must happen (created by farmer click or AI).
+    # Every task carries one: a worker who cannot see WHERE to go cannot act on it.
     lat: Mapped[float | None] = mapped_column(Float)
     lon: Mapped[float | None] = mapped_column(Float)
+    # What the point MEANS, which is not the same thing for every task:
+    #   "punto" — go to this exact spot (a pest hotspot, a dry patch the farmer clicked).
+    #   "campo" — the task covers the whole field; the pin is its centroid, so the
+    #             worker still gets a destination without implying false precision.
+    # Also the discriminator the generator uses to dedup whole-field tasks against
+    # located ones — before this column that job was done by `lat IS NULL`.
+    pin_scope: Mapped[str] = mapped_column(
+        Enum("campo", "punto", name="task_pin_scope_enum"), nullable=False, default="campo"
+    )
     due_date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)

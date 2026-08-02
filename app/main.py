@@ -98,9 +98,18 @@ app.include_router(api_router, prefix="/api/v1")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+# media_type explícito: sin él FastAPI anuncia `application/json` para estas
+# páginas. Como además mandamos `X-Content-Type-Options: nosniff`, el navegador no
+# puede corregirlo por su cuenta y termina decodificando el HTML con la codificación
+# equivocada: los emoji del mensaje de WhatsApp llegaban como U+FFFD (�) y se
+# enviaban rotos al productor. El archivo en disco siempre estuvo bien; lo que
+# faltaba era declarar cómo leerlo.
+_HTML = "text/html; charset=utf-8"
+
+
 @app.get("/", include_in_schema=False)
 async def serve_dashboard() -> FileResponse:
-    return FileResponse("static/index.html")
+    return FileResponse("static/index.html", media_type=_HTML)
 
 
 @app.get("/health", tags=["health"])
@@ -127,9 +136,9 @@ async def public_env() -> Response:
 
 @app.get("/privacy", include_in_schema=False)
 async def privacy_page() -> FileResponse:
-    return FileResponse("static/privacy.html")
+    return FileResponse("static/privacy.html", media_type=_HTML)
 
 
 @app.get("/terms", include_in_schema=False)
 async def terms_page() -> FileResponse:
-    return FileResponse("static/terms.html")
+    return FileResponse("static/terms.html", media_type=_HTML)
