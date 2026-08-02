@@ -546,6 +546,28 @@ body{font-family:var(--ui);background:var(--bg);color:var(--text);font-size:14px
   .tasks-map{position:static;order:-1}
   .tasks-map #map{height:300px}
 }
+/* ── Bandeja de propuestas ──
+   Lo que el sistema sugirió y todavía nadie decidió. Va arriba de todo en Tareas
+   porque decidir lleva segundos y hacerlo tarde cuesta una campaña. */
+.prop-box{border:1.5px solid var(--green-line);background:var(--green-pale);border-radius:var(--radius);
+  padding:.8rem .9rem;margin-bottom:1rem}
+.prop-head{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem}
+.prop-head b{font-size:.95rem}
+.prop-head .n{font-family:var(--data);font-size:.72rem;font-weight:600;background:var(--card);
+  border:1px solid var(--green-line);border-radius:5px;padding:.05rem .35rem;color:var(--green)}
+.prop-item{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:.6rem .7rem;margin-bottom:.45rem;display:grid;grid-template-columns:auto 1fr auto;
+  gap:.5rem;align-items:center}
+@media(max-width:620px){.prop-item{grid-template-columns:1fr}.prop-item .prop-acts{justify-self:stretch}}
+.prop-item .txt{min-width:0}
+.prop-item .t{font-size:.88rem;font-weight:700}
+.prop-item .d{font-size:.78rem;color:var(--muted);margin-top:.1rem}
+.prop-acts{display:flex;gap:.35rem}
+.prop-si{background:var(--green);color:var(--on-accent);border:none;border-radius:var(--radius-sm);
+  padding:.4rem .8rem;font-weight:700;font-size:.82rem;cursor:pointer}
+.prop-no{background:var(--card2);color:var(--text2);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:.4rem .7rem;font-size:.82rem;cursor:pointer}
+.prop-no:hover{border-color:var(--red);color:var(--red)}
 /* Cabecera de grupo por urgencia: la lista plana obligaba a leer las 13 para
    saber cuál corría prisa. */
 .task-group{display:flex;align-items:center;gap:.45rem;margin:.9rem .1rem .4rem;font-family:var(--data);
@@ -1091,6 +1113,7 @@ async function renderMayordomo(){
     <div class="view-head"><div class="view-title">Tareas de hoy</div><div class="view-sub">Toca un pin para ir al punto · activa "Crear tarea" y toca el mapa para agregar una</div>
       <div style="flex:1"></div>
       <button class="add-btn" onclick="genTasks()">Actualizar (IA)</button></div>
+    <div id="proposals"></div>
     <div class="tasks-layout">
       <div id="tasks-list"><div class="empty">Cargando tareas…</div></div>
       <div class="card map-card tasks-map">
@@ -1106,6 +1129,7 @@ async function renderMayordomo(){
         </div></div>
     </div>`;
   await loadTasksAndMap();
+  loadProposals();
 }
 
 // Crear tarea con un clic en el mapa
@@ -1153,6 +1177,60 @@ async function saveMapTask(){
 
 let tasksByField={};
 let _taskListCache=[];
+// ── Bandeja de propuestas ──
+// El sistema mira los índices y sugiere; el que camina el lote decide. Y cuando
+// dice que no, se le pregunta por qué: ese "no" es la corrección de alguien que
+// sabe algo que el satélite no puede ver, y es lo único que permite ajustar los
+// umbrales a ESE campo.
+let _props=[];
+async function loadProposals(){
+  const el=document.getElementById('proposals');if(!el)return;
+  try{_props=await(await api('/tasks/proposals')).json();}catch{_props=[];}
+  if(!_props.length){el.innerHTML='';return;}
+  el.innerHTML=`
+    <div class="prop-box">
+      <div class="prop-head">
+        <b>El sistema propone ${_props.length} tarea${_props.length===1?'':'s'}</b>
+        <span class="n">para decidir</span>
+        <span style="flex:1"></span>
+        <button class="prop-si" onclick="aprobarTodas()">Aceptar todas</button>
+      </div>
+      ${_props.map((t,i)=>`<div class="prop-item" id="prop-${t.id}">
+        <span class="cat cat-${t.task_type}">${CAT[t.task_type]||'Tarea'}</span>
+        <span class="txt"><div class="t">${esc(t.field_name||'')} — ${esc(t.title||'')}</div>
+          <div class="d">${esc(t.detail||'')}${t.recommended_value?' · '+esc(t.recommended_value):''}</div></span>
+        <span class="prop-acts">
+          <button class="prop-si" onclick="decidirProp('${t.id}',true)">Sí</button>
+          <button class="prop-no" onclick="decidirProp('${t.id}',false,${i})">No</button>
+        </span>
+      </div>`).join('')}
+      <div style="font-size:.74rem;color:var(--muted);margin-top:.5rem">
+        Sale de los índices satelitales. Vos sabés si esa mancha es sombra de un árbol o el lote ya se regó ayer.</div>
+    </div>`;
+}
+async function decidirProp(id,acepta,i){
+  let motivo=null;
+  if(!acepta){
+    // Se pregunta, no se exige: negarse a explicar sigue siendo una respuesta
+    // válida, y bloquear el rechazo detrás de un formulario haría que dejen de
+    // rechazar en vez de que expliquen.
+    motivo=prompt('¿Por qué no corresponde? (opcional, ayuda a afinar el sistema)')||null;
+  }
+  try{
+    await api(`/tasks/${id}/${acepta?'approve':'reject'}`,
+      {method:'POST',body:acepta?undefined:JSON.stringify({reason:motivo})});
+    toast(acepta?'Tarea aceptada':'Propuesta descartada');
+    loadProposals();loadTasksAndMap();refreshTaskCounts();
+  }catch{toast('No se pudo registrar la decisión');}
+}
+async function aprobarTodas(){
+  try{
+    const d=await(await api('/tasks/proposals/approve-all',{method:'POST'})).json();
+    toast(`${d.approved} tarea(s) aceptadas`);
+    loadProposals();loadTasksAndMap();refreshTaskCounts();
+  }catch{toast('No se pudo aceptar');}
+}
+
 async function loadTasksAndMap(){
   const el=document.getElementById('tasks-list');
   let tasks=[];

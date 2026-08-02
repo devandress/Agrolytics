@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from loguru import logger
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -124,6 +125,109 @@ async def complete_task(task_id: uuid.UUID, current_user: CurrentUser, db: DBSes
     await db.commit()
     await db.refresh(task)
     return TaskOut.model_validate(task)
+
+
+# ── El productor decide sobre lo que el sistema propuso ──
+# El satélite ve síntomas, no el campo. Quien camina el lote sabe que esa mancha es
+# la sombra de un árbol, o que ese sector ya se regó ayer. Por eso el sistema
+# propone y él dispone — y cuando dice que no, ese "no" se guarda.
+
+
+class RejectBody(BaseModel):
+    reason: str | None = None
+
+
+async def _owned_task(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID) -> FieldTask:
+    r = await db.execute(
+        select(FieldTask)
+        .join(Field, FieldTask.field_id == Field.id)
+        .where(FieldTask.id == task_id, Field.user_id == user_id)
+    )
+    task = r.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada.")
+    return task
+
+
+@router.get("/tasks/proposals", response_model=list[TaskWithFieldOut])
+async def list_proposals(current_user: CurrentUser, db: DBSession) -> list[TaskWithFieldOut]:
+    """Lo que el sistema propuso y todavía nadie decidió, más urgente primero."""
+    rows = (
+        await db.execute(
+            select(FieldTask, Field.name, Field.crop_type)
+            .join(Field, FieldTask.field_id == Field.id)
+            .where(Field.user_id == current_user.id, FieldTask.status == "propuesta")
+            .order_by(FieldTask.priority.asc(), FieldTask.due_date.asc())
+        )
+    ).all()
+    out = []
+    for task, field_name, crop in rows:
+        item = TaskWithFieldOut.model_validate(task)
+        item.field_name = field_name
+        item.crop_type = crop
+        out.append(item)
+    return out
+
+
+@router.post("/tasks/{task_id}/approve", response_model=TaskOut)
+async def approve_task(task_id: uuid.UUID, current_user: CurrentUser, db: DBSession) -> TaskOut:
+    """Aceptar una propuesta: pasa a ser una tarea a hacer."""
+    task = await _owned_task(db, task_id, current_user.id)
+    if task.status != "propuesta":
+        raise HTTPException(status_code=409, detail=f"La tarea ya está en estado '{task.status}'.")
+    task.status = "pendiente"
+    task.decided_at = datetime.now(UTC)
+    task.decided_by = current_user.id
+    await db.commit()
+    await db.refresh(task)
+    return TaskOut.model_validate(task)
+
+
+@router.post("/tasks/{task_id}/reject", response_model=TaskOut)
+async def reject_task(
+    task_id: uuid.UUID, current_user: CurrentUser, db: DBSession, body: RejectBody | None = None
+) -> TaskOut:
+    """Descartar una propuesta, opcionalmente diciendo por qué.
+
+    El motivo no es burocracia: es la corrección de alguien que conoce el lote. Que
+    rechacen "regar" repetidamente en la misma parcela dice que el umbral está mal
+    ahí, y eso no se aprende de ningún satélite.
+    """
+    task = await _owned_task(db, task_id, current_user.id)
+    if task.status != "propuesta":
+        raise HTTPException(status_code=409, detail=f"La tarea ya está en estado '{task.status}'.")
+    task.status = "descartada"
+    task.decided_at = datetime.now(UTC)
+    task.decided_by = current_user.id
+    if body and body.reason:
+        task.rejection_reason = body.reason[:300]
+    await db.commit()
+    await db.refresh(task)
+    return TaskOut.model_validate(task)
+
+
+@router.post("/tasks/proposals/approve-all")
+async def approve_all_proposals(current_user: CurrentUser, db: DBSession) -> dict[str, Any]:
+    """Aceptar todas las propuestas abiertas de una sola vez.
+
+    Existe porque la mayoría de los días el productor está de acuerdo con todo, y
+    obligarlo a tocar diez veces convierte la aprobación en un trámite que va a
+    terminar salteándose.
+    """
+    rows = (
+        await db.execute(
+            select(FieldTask)
+            .join(Field, FieldTask.field_id == Field.id)
+            .where(Field.user_id == current_user.id, FieldTask.status == "propuesta")
+        )
+    ).scalars().all()
+    now = datetime.now(UTC)
+    for task in rows:
+        task.status = "pendiente"
+        task.decided_at = now
+        task.decided_by = current_user.id
+    await db.commit()
+    return {"approved": len(rows)}
 
 
 # ══════════════ REGADOR ══════════════

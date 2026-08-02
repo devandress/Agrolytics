@@ -6,7 +6,7 @@ Powers the analysis workbench (multi-sensor chart + interactive layer/swipe view
 import asyncio
 import json
 import uuid
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from datetime import date as _date
 from pathlib import Path
 from typing import Any
@@ -699,6 +699,11 @@ async def create_one_task(
         lat=lat,
         lon=lon,
         pin_scope="punto" if located else "campo",
+        # Nace aprobada: la escribió el productor o aceptó una propuesta del
+        # asistente. Pedirle que apruebe lo que acaba de crear sería absurdo.
+        status="pendiente",
+        decided_at=datetime.now(UTC),
+        decided_by=current_user.id,
     )
     db.add(task)
     await db.commit()

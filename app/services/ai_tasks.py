@@ -224,7 +224,7 @@ async def propose_tasks(db: AsyncSession, field: Field, messages: list[dict] | N
     existing = (
         await db.execute(
             select(FieldTask.task_type, FieldTask.title, FieldTask.lat, FieldTask.lon).where(
-                FieldTask.field_id == field.id, FieldTask.status == "pendiente"
+                FieldTask.field_id == field.id, FieldTask.status.in_(("pendiente", "propuesta"))
             )
         )
     ).all()
